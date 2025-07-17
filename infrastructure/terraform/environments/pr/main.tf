@@ -7,9 +7,11 @@ terraform {
   }
 
   backend "s3" {
-    bucket = "mercor-terraform-state"
-    key    = "pr-environments/terraform.tfstate"
-    region = "us-east-1"
+    bucket         = "test-terraform-state-bucket-mohit"
+    key            = "pr-environments/terraform.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
+    dynamodb_table = "test-terraform-state-locks-mohit"
   }
 }
 
@@ -17,13 +19,14 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Data sources for shared infrastructure
 data "terraform_remote_state" "shared" {
   backend = "s3"
   config = {
-    bucket = "mercor-terraform-state"
-    key    = "shared-infrastructure/terraform.tfstate"
-    region = var.aws_region
+    bucket         = "test-terraform-state-bucket-mohit"
+    key            = "shared-infrastructure/terraform.tfstate"
+    region         = var.aws_region
+    encrypt        = true
+    dynamodb_table = "test-terraform-state-locks-mohit"
   }
 }
 

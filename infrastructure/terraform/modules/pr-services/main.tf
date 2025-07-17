@@ -4,9 +4,11 @@ data "aws_region" "current" {}
 data "terraform_remote_state" "shared" {
   backend = "s3"
   config = {
-    bucket = "mercor-terraform-state"
-    key    = "shared-infrastructure/terraform.tfstate"
-    region = "us-east-1"
+    bucket         = "test-terraform-state-bucket-mohit"
+    key            = "shared-infrastructure/terraform.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
+    dynamodb_table = "test-terraform-state-locks-mohit"
   }
 }
 
