@@ -66,6 +66,7 @@ variable "hosted_zone_id" {
 variable "domain_name" {
   description = "Domain name"
   type        = string
+  default     = "devrev-eng.ai"
 }
 
 variable "django_image" {

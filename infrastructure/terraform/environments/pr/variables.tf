@@ -12,6 +12,7 @@ variable "pr_number" {
 variable "domain_name" {
   description = "Domain name for SSL certificate"
   type        = string
+  default     = "devrev-eng.ai"
 }
 
 variable "django_image" {
