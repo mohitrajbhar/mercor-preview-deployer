@@ -1,0 +1,197 @@
+name: Deploy PR Environment
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+  DOMAIN_NAME: devrev-eng.ai
+  ECR_REPOSITORY: mercor-django
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Check if shared infrastructure exists
+      id: check-shared
+      run: |
+        if aws s3 ls s3://mercor-terraform-state/shared-infrastructure/terraform.tfstate; then
+          echo "shared_exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "shared_exists=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Deploy shared infrastructure (if needed)
+      if: steps.check-shared.outputs.shared_exists == 'false'
+      working-directory: ./infrastructure/terraform/shared
+      run: |
+        echo "⚠️ Shared infrastructure not found. Deploying shared resources first..."
+        terraform init
+        terraform apply -auto-approve \
+          -var="domain_name=${{ env.DOMAIN_NAME }}"
+        echo "✅ Shared infrastructure deployed"
+    
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+    
+    - name: Build and push Django image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: pr-${{ github.event.number }}
+      run: |
+        # Build Docker image
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./docker/django
+        
+        # Create ECR repository if it doesn't exist
+        aws ecr describe-repositories --repository-names $ECR_REPOSITORY || \
+        aws ecr create-repository --repository-name $ECR_REPOSITORY
+        
+        # Push image to ECR
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.0
+        terraform_wrapper: false
+    
+    - name: Terraform Init
+      working-directory: ./infrastructure/terraform/environments/pr
+      run: terraform init
+    
+    - name: Select Terraform Workspace
+      working-directory: ./infrastructure/terraform/environments/pr
+      run: |
+        if terraform workspace select pr-${{ github.event.number }}; then
+          echo "Workspace pr-${{ github.event.number }} found"
+        else
+          echo "Workspace pr-${{ github.event.number }} not found, nothing to destroy"
+          exit 0
+        fi
+    
+    - name: Terraform Destroy
+      working-directory: ./infrastructure/terraform/environments/pr
+      env:
+        TF_VAR_pr_number: ${{ github.event.number }}
+        TF_VAR_django_image: "dummy"  # Not needed for destroy
+        TF_VAR_mongodb_image: mongo:7.0
+        TF_VAR_domain_name: ${{ env.DOMAIN_NAME }}
+      run: terraform destroy -auto-approve
+    
+    - name: Delete Terraform Workspace
+      working-directory: ./infrastructure/terraform/environments/pr
+      run: |
+        terraform workspace select default
+        terraform workspace delete pr-${{ github.event.number }}
+    
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+    
+    - name: Delete ECR image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: pr-${{ github.event.number }}
+      run: |
+        # Delete the PR-specific image from ECR
+        aws ecr batch-delete-image \
+          --repository-name $ECR_REPOSITORY \
+          --image-ids imageTag=$IMAGE_TAG || true
+    
+    - name: Clean up old EFS directories (optional)
+      run: |
+        # Note: EFS directories are cleaned up automatically via access points
+        # This is just for logging purposes
+        echo "EFS cleanup handled by access point deletion"
+    
+    - name: Comment PR on successful destruction
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const prNumber = context.issue.number;
+          const wasMerged = context.payload.pull_request.merged;
+          const action = wasMerged ? 'merged' : 'closed';
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `🧹 **PR Environment Cleaned Up**
+            
+            The PR environment for #${prNumber} has been successfully destroyed after the PR was ${action}.
+            
+            **🗑️ Resources removed:**
+            - ECS Services: \`django-pr-${prNumber}\`, \`mongodb-pr-${prNumber}\`
+            - ALB listener rule and target group
+            - Route53 DNS record: \`pr-${prNumber}.${process.env.DOMAIN_NAME}\`
+            - EFS access point for isolated storage
+            - Security groups and service discovery namespace
+            - CloudWatch log groups
+            - ECR Docker image: \`pr-${prNumber}\`
+            
+            **💰 Shared resources retained:**
+            - VPC and networking (shared across all PRs)
+            - ECS cluster (shared)
+            - Application Load Balancer (shared)
+            - EFS file system (shared, only access point removed)
+            
+            **Cost impact:** Only PR-specific services were removed, shared infrastructure remains for other PRs.
+            
+            Thank you for using the PR deployment system! 🚀`
+          });
+
+  notify-failure:
+    runs-on: ubuntu-latest
+    needs: destroy
+    if: failure()
+    
+    steps:
+    - name: Comment PR on failure
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `⚠️ **Environment Cleanup Failed**
+            
+            The cleanup process for PR #${{ github.event.number }} encountered issues. Please check the [GitHub Actions logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
+            
+            **Manual cleanup may be required for:**
+            - ECS services: \`django-pr-${{ github.event.number }}\`, \`mongodb-pr-${{ github.event.number }}\`
+            - ALB listener rule and target group
+            - Route53 DNS record
+            - EFS access point
+            - Security groups
+            - ECR images
+            
+            **Cleanup commands:**
+            \`\`\`bash
+            # Clean up ECS services
+            aws ecs update-service --cluster mercor-shared-cluster \\
+              --service django-pr-${{ github.event.number }} --desired-count 0
+            aws ecs delete-service --cluster mercor-shared-cluster \\
+              --service django-pr-${{ github.event.number }}
+            
+            # Clean up ALB resources
+            aws elbv2 describe-target-groups --names django-pr-${{ github.event.number }}
+            aws elbv2 delete-target-group --target-group-arn <arn>
+            \`\`\`
+            
+            Please contact the infrastructure team for assistance with complete cleanup.`
+          });

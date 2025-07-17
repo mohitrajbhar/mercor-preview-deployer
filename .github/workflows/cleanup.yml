@@ -1,0 +1,223 @@
+name: Cleanup Old Resources
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Cleanup old ECR images
+      run: |
+        REPOSITORY="mercor-django"
+        
+        echo "🧹 Cleaning up old ECR images..."
+        
+        # Keep only the latest 10 images, delete older ones
+        aws ecr describe-images \
+          --repository-name $REPOSITORY \
+          --query 'sort_by(imageDetails,&imagePushedAt)[:-10].[imageDigest]' \
+          --output text | \
+        while read digest; do
+          if [ ! -z "$digest" ]; then
+            echo "Deleting image: $digest"
+            aws ecr batch-delete-image \
+              --repository-name $REPOSITORY \
+              --image-ids imageDigest=$digest || true
+          fi
+        done
+        
+        echo "✅ ECR cleanup completed"
+    
+    - name: Check for orphaned resources
+      run: |
+        echo "🔍 Checking for orphaned resources..."
+        
+        # Check for services without corresponding PRs
+        CLUSTER_NAME=$(aws s3 cp s3://mercor-terraform-state/shared-infrastructure/terraform.tfstate - | jq -r '.outputs.cluster_name.value')
+        
+        # List all ECS services
+        aws ecs list-services --cluster $CLUSTER_NAME \
+          --query 'serviceArns[*]' --output text | tr '\t' '\n' | \
+        while read service_arn; do
+          service_name=$(echo $service_arn | cut -d'/' -f3)
+          if [[ $service_name == django-pr-* ]]; then
+            pr_number=$(echo $service_name | sed 's/django-pr-//')
+            echo "Found service for PR: $pr_number"
+            # Here you could add logic to check if PR still exists
+          fi
+        done
+        
+        echo "✅ Orphaned resource check completed" hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.0
+        terraform_wrapper: false
+    
+    - name: Terraform Init (PR Environment)
+      working-directory: ./infrastructure/terraform/environments/pr
+      run: terraform init
+    
+    - name: Terraform Workspace
+      working-directory: ./infrastructure/terraform/environments/pr
+      run: |
+        terraform workspace select pr-${{ github.event.number }} || \
+        terraform workspace new pr-${{ github.event.number }}
+    
+    - name: Terraform Plan
+      working-directory: ./infrastructure/terraform/environments/pr
+      env:
+        TF_VAR_pr_number: ${{ github.event.number }}
+        TF_VAR_django_image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:pr-${{ github.event.number }}
+        TF_VAR_mongodb_image: mongo:7.0
+        TF_VAR_domain_name: ${{ env.DOMAIN_NAME }}
+      run: terraform plan -out=tfplan
+    
+    - name: Terraform Apply
+      working-directory: ./infrastructure/terraform/environments/pr
+      env:
+        TF_VAR_pr_number: ${{ github.event.number }}
+        TF_VAR_django_image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:pr-${{ github.event.number }}
+        TF_VAR_mongodb_image: mongo:7.0
+        TF_VAR_domain_name: ${{ env.DOMAIN_NAME }}
+      run: terraform apply tfplan
+    
+    - name: Get deployment outputs
+      working-directory: ./infrastructure/terraform/environments/pr
+      id: terraform-outputs
+      run: |
+        echo "deployment_url=$(terraform output -raw deployment_url)" >> $GITHUB_OUTPUT
+    
+    - name: Wait for deployment to be ready
+      run: |
+        echo "⏳ Waiting for deployment to be ready..."
+        DEPLOYMENT_URL="https://${{ steps.terraform-outputs.outputs.deployment_url }}"
+        
+        # Wait up to 10 minutes for the service to be healthy
+        for i in {1..60}; do
+          if curl -f -s "$DEPLOYMENT_URL/health/" > /dev/null; then
+            echo "✅ Deployment is healthy!"
+            break
+          fi
+          echo "⏳ Waiting for deployment... (attempt $i/60)"
+          sleep 10
+        done
+    
+    - name: Run basic health checks
+      run: |
+        DEPLOYMENT_URL="https://${{ steps.terraform-outputs.outputs.deployment_url }}"
+        
+        echo "🔍 Running health checks..."
+        
+        # Test health endpoint
+        echo "Testing health endpoint..."
+        curl -f "$DEPLOYMENT_URL/health/" | jq .
+        
+        # Test database connection
+        echo "Testing database connection..."
+        curl -f "$DEPLOYMENT_URL/api/test-db/" | jq .
+        
+        echo "✅ All health checks passed!"
+    
+    - name: Comment PR with deployment info
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const deploymentUrl = '${{ steps.terraform-outputs.outputs.deployment_url }}';
+          const prNumber = context.issue.number;
+          
+          const body = `🚀 **PR Environment Deployed Successfully!**
+          
+          **🌐 Deployment URL:** https://${deploymentUrl}
+          
+          **📋 Available Endpoints:**
+          - Health Check: https://${deploymentUrl}/health/
+          - API Users: https://${deploymentUrl}/api/users/
+          - Database Test: https://${deploymentUrl}/api/test-db/
+          - Admin Panel: https://${deploymentUrl}/admin/
+          
+          **🗃️ Services Status:**
+          - ✅ Django Application: Running on shared ECS cluster
+          - ✅ MongoDB Database: Connected with isolated storage
+          - ✅ SSL Certificate: Active (shared ALB)
+          - ✅ Load Balancer: Healthy routing
+          
+          **💡 How to test:**
+          \`\`\`bash
+          # Test health endpoint
+          curl https://${deploymentUrl}/health/
+          
+          # Create a test user
+          curl -X POST https://${deploymentUrl}/api/users/ \\
+            -H "Content-Type: application/json" \\
+            -d '{"name": "Test User", "email": "test@example.com"}'
+          
+          # Get all users
+          curl https://${deploymentUrl}/api/users/
+          \`\`\`
+          
+          **🔧 Infrastructure:**
+          - Shared VPC and networking (cost-optimized)
+          - ECS Services: \`django-pr-${prNumber}\`, \`mongodb-pr-${prNumber}\`
+          - Isolated EFS storage path: \`/pr-${prNumber}\`
+          - Service Discovery: \`pr-${prNumber}.local\`
+          
+          **💰 Cost Benefits:**
+          - Shared NAT Gateway and ALB (85% networking cost reduction)
+          - Isolated application and database per PR
+          - Auto-cleanup on PR close/merge
+          
+          This environment will be automatically destroyed when the PR is closed or merged.`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: body
+          });
+
+  notify-failure:
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: failure()
+    
+    steps:
+    - name: Comment PR on failure
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `❌ **PR Environment Deployment Failed**
+            
+            The deployment for PR #${{ github.event.number }} has failed. Please check the [GitHub Actions logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for more details.
+            
+            **Common issues:**
+            - AWS credentials or permissions
+            - Shared infrastructure not deployed
+            - Docker build failures
+            - Domain/SSL certificate issues
+            - ALB listener rule conflicts (priority conflicts)
+            
+            **Troubleshooting steps:**
+            1. Check if shared infrastructure exists
+            2. Verify ECR repository permissions
+            3. Ensure SSL certificate is issued
+            4. Check for PR number conflicts (same PR deployed twice)
+            
+            Please fix the issues and push a new commit to retry the deployment.`
+          });

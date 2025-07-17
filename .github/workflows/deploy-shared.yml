@@ -1,0 +1,78 @@
+name: Deploy Shared Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+        - apply
+        - destroy
+        - plan
+
+env:
+  AWS_REGION: us-east-1
+  DOMAIN_NAME: devrev-eng.ai
+
+jobs:
+  shared-infrastructure:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.0
+        terraform_wrapper: false
+    
+    - name: Terraform Init
+      working-directory: ./infrastructure/terraform/shared
+      run: terraform init
+    
+    - name: Terraform Plan
+      if: github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
+      working-directory: ./infrastructure/terraform/shared
+      env:
+        TF_VAR_domain_name: ${{ env.DOMAIN_NAME }}
+      run: terraform plan -out=shared-tfplan
+    
+    - name: Terraform Apply
+      if: github.event.inputs.action == 'apply'
+      working-directory: ./infrastructure/terraform/shared
+      env:
+        TF_VAR_domain_name: ${{ env.DOMAIN_NAME }}
+      run: terraform apply shared-tfplan
+    
+    - name: Terraform Destroy
+      if: github.event.inputs.action == 'destroy'
+      working-directory: ./infrastructure/terraform/shared
+      env:
+        TF_VAR_domain_name: ${{ env.DOMAIN_NAME }}
+      run: |
+        echo "⚠️ This will destroy ALL shared infrastructure!"
+        echo "Make sure no PR environments are currently running."
+        terraform destroy -auto-approve
+    
+    - name: Output results
+      if: github.event.inputs.action == 'apply'
+      working-directory: ./infrastructure/terraform/shared
+      run: |
+        echo "## Shared Infrastructure Outputs" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**VPC ID:** $(terraform output -raw vpc_id)" >> $GITHUB_STEP_SUMMARY
+        echo "**Cluster Name:** $(terraform output -raw cluster_name)" >> $GITHUB_STEP_SUMMARY
+        echo "**ALB ARN:** $(terraform output -raw alb_arn)" >> $GITHUB_STEP_SUMMARY
+        echo "**EFS ID:** $(terraform output -raw efs_id)" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,102 @@
+name: Update PR Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to update'
+        required: true
+        type: string
+      force_rebuild:
+        description: 'Force rebuild Docker image'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  AWS_REGION: us-east-1
+  DOMAIN_NAME: devrev-eng.ai
+  ECR_REPOSITORY: mercor-django
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Login to Amazon ECR
+      if: github.event.inputs.force_rebuild == 'true'
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+    
+    - name: Build and push Django image
+      if: github.event.inputs.force_rebuild == 'true'
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: pr-${{ inputs.pr_number }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./docker/django
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+    
+    - name: Force ECS Service Update
+      run: |
+        # Get cluster name from shared infrastructure
+        CLUSTER_NAME=$(aws s3 cp s3://mercor-terraform-state/shared-infrastructure/terraform.tfstate - | jq -r '.outputs.cluster_name.value')
+        
+        # Force update of ECS services to pull new image
+        echo "Updating Django service..."
+        aws ecs update-service \
+          --cluster $CLUSTER_NAME \
+          --service django-pr-${{ inputs.pr_number }} \
+          --force-new-deployment
+        
+        echo "Updating MongoDB service..."
+        aws ecs update-service \
+          --cluster $CLUSTER_NAME \
+          --service mongodb-pr-${{ inputs.pr_number }} \
+          --force-new-deployment
+        
+        echo "✅ ECS service updates initiated"
+    
+    - name: Wait for deployment to stabilize
+      run: |
+        # Get cluster name from shared infrastructure
+        CLUSTER_NAME=$(aws s3 cp s3://mercor-terraform-state/shared-infrastructure/terraform.tfstate - | jq -r '.outputs.cluster_name.value')
+        
+        echo "⏳ Waiting for ECS services to stabilize..."
+        
+        # Wait for Django service
+        aws ecs wait services-stable \
+          --cluster $CLUSTER_NAME \
+          --services django-pr-${{ inputs.pr_number }}
+        
+        # Wait for MongoDB service  
+        aws ecs wait services-stable \
+          --cluster $CLUSTER_NAME \
+          --services mongodb-pr-${{ inputs.pr_number }}
+        
+        echo "✅ ECS services are stable"
+    
+    - name: Verify deployment
+      run: |
+        DEPLOYMENT_URL="https://pr-${{ inputs.pr_number }}.${{ env.DOMAIN_NAME }}"
+        
+        echo "🔍 Verifying updated deployment..."
+        
+        # Test health endpoint
+        if curl -f -s "$DEPLOYMENT_URL/health/" > /dev/null; then
+          echo "✅ Health check passed"
+          curl -s "$DEPLOYMENT_URL/health/" | jq .
+        else
+          echo "❌ Health check failed"
+          exit 1
+        fi
