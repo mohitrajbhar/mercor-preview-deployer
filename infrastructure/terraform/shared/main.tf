@@ -90,11 +90,3 @@ module "efs" {
 
   tags = local.common_tags
 }
-
-locals {
-  common_tags = {
-    Environment = "shared"
-    Project     = "mercor-pr-deployments"
-    ManagedBy   = "terraform"
-  }
-}
