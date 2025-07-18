@@ -269,7 +269,6 @@ resource "aws_ecs_task_definition" "mongodb" {
 
     efs_volume_configuration {
       file_system_id     = var.efs_id
-      root_directory     = "/pr-${var.pr_number}"
       transit_encryption = "ENABLED"
       authorization_config {
         access_point_id = aws_efs_access_point.mongodb.id
