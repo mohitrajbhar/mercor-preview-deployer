@@ -1,3 +1,6 @@
+# infrastructure/terraform/modules/pr-services/main.tf
+# Most reliable approach: MongoDB first, then Django with IP reference
+
 data "aws_region" "current" {}
 
 # Data source for shared infrastructure
@@ -10,14 +13,6 @@ data "terraform_remote_state" "shared" {
     encrypt        = true
     dynamodb_table = "test-terraform-state-locks-mohit"
   }
-}
-
-# Service Discovery Namespace  for this PR (used by Service Connect)
-resource "aws_service_discovery_private_dns_namespace" "pr" {
-  name = "pr-${var.pr_number}.local"
-  vpc  = var.vpc_id
-
-  tags = var.tags
 }
 
 # EFS Access Point for this PR
@@ -47,24 +42,21 @@ resource "aws_efs_access_point" "mongodb" {
 resource "aws_cloudwatch_log_group" "django" {
   name              = "/ecs/django-pr-${var.pr_number}"
   retention_in_days = 7
-
-  tags = var.tags
+  tags              = var.tags
 }
 
 resource "aws_cloudwatch_log_group" "mongodb" {
   name              = "/ecs/mongodb-pr-${var.pr_number}"
   retention_in_days = 7
-
-  tags = var.tags
+  tags              = var.tags
 }
 
-# Security Groups (without circular dependencies)
+# Security Groups with all required rules
 resource "aws_security_group" "django" {
   name        = "django-pr-${var.pr_number}"
   description = "Security group for Django service PR ${var.pr_number}"
   vpc_id      = var.vpc_id
 
-  # Ingress: Allow ALB to reach Django
   ingress {
     from_port       = 8000
     to_port         = 8000
@@ -73,31 +65,36 @@ resource "aws_security_group" "django" {
     description     = "ALB to Django"
   }
 
-  # Egress: Allow HTTPS for package downloads, API calls
   egress {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTPS outbound for package downloads and API calls"
+    description = "HTTPS outbound"
   }
 
-  # Egress: Allow HTTP for redirects and package downloads
   egress {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTP outbound for redirects and package downloads"
+    description = "HTTP outbound"
   }
 
-  # Egress: Allow DNS resolution
   egress {
     from_port   = 53
     to_port     = 53
     protocol    = "udp"
     cidr_blocks = ["0.0.0.0/0"]
     description = "DNS resolution"
+  }
+
+  egress {
+    from_port   = 27017
+    to_port     = 27017
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+    description = "MongoDB connection within VPC"
   }
 
   tags = merge(var.tags, {
@@ -110,25 +107,30 @@ resource "aws_security_group" "mongodb" {
   description = "Security group for MongoDB service PR ${var.pr_number}"
   vpc_id      = var.vpc_id
 
-  # Egress: Allow HTTPS for Docker image pulls
+  ingress {
+    from_port   = 27017
+    to_port     = 27017
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+    description = "MongoDB access from VPC"
+  }
+
   egress {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTPS outbound for Docker image pulls"
+    description = "HTTPS outbound"
   }
 
-  # Egress: Allow HTTP for Docker image pulls and redirects
   egress {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTP outbound for Docker image pulls"
+    description = "HTTP outbound"
   }
 
-  # Egress: Allow DNS resolution
   egress {
     from_port   = 53
     to_port     = 53
@@ -137,39 +139,17 @@ resource "aws_security_group" "mongodb" {
     description = "DNS resolution"
   }
 
-  # Egress: Allow EFS access (if we add persistent storage later)
   egress {
     from_port       = 2049
     to_port         = 2049
     protocol        = "tcp"
     security_groups = [var.efs_security_group_id]
-    description     = "EFS access for persistent storage"
+    description     = "EFS access"
   }
 
   tags = merge(var.tags, {
     Name = "mongodb-sg-pr-${var.pr_number}"
   })
-}
-
-# Separate security group rules to avoid circular dependency
-resource "aws_security_group_rule" "django_to_mongodb" {
-  type                     = "egress"
-  from_port                = 27017
-  to_port                  = 27017
-  protocol                 = "tcp"
-  security_group_id        = aws_security_group.django.id
-  source_security_group_id = aws_security_group.mongodb.id
-  description              = "Django to MongoDB communication"
-}
-
-resource "aws_security_group_rule" "mongodb_from_django" {
-  type                     = "ingress"
-  from_port                = 27017
-  to_port                  = 27017
-  protocol                 = "tcp"
-  security_group_id        = aws_security_group.mongodb.id
-  source_security_group_id = aws_security_group.django.id
-  description              = "MongoDB accepts connections from Django"
 }
 
 # ALB Target Group
@@ -225,7 +205,7 @@ resource "aws_route53_record" "pr" {
   }
 }
 
-# MongoDB Task Definition with Service Connect
+# MongoDB Task Definition
 resource "aws_ecs_task_definition" "mongodb" {
   family                   = "mongodb-pr-${var.pr_number}"
   network_mode             = "awsvpc"
@@ -242,10 +222,8 @@ resource "aws_ecs_task_definition" "mongodb" {
 
       portMappings = [
         {
-          name          = "mongodb-port"
           containerPort = 27017
           protocol      = "tcp"
-          appProtocol   = "http"
         }
       ]
 
@@ -272,7 +250,30 @@ resource "aws_ecs_task_definition" "mongodb" {
   tags = var.tags
 }
 
-# Django Task Definition with Service Connect
+# MongoDB ECS Service
+resource "aws_ecs_service" "mongodb" {
+  name            = "mongodb-pr-${var.pr_number}"
+  cluster         = var.cluster_id
+  task_definition = aws_ecs_task_definition.mongodb.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = var.private_subnets
+    security_groups  = [aws_security_group.mongodb.id]
+    assign_public_ip = false
+  }
+
+  tags = var.tags
+}
+
+# Wait for MongoDB service to be stable
+resource "time_sleep" "wait_for_mongodb" {
+  depends_on      = [aws_ecs_service.mongodb]
+  create_duration = "60s"
+}
+
+# Django Task Definition (created after MongoDB)
 resource "aws_ecs_task_definition" "django" {
   family                   = "django-pr-${var.pr_number}"
   network_mode             = "awsvpc"
@@ -289,17 +290,15 @@ resource "aws_ecs_task_definition" "django" {
 
       portMappings = [
         {
-          name          = "django-port"
           containerPort = 8000
           protocol      = "tcp"
-          appProtocol   = "http"
         }
       ]
 
       environment = [
         {
           name  = "MONGODB_HOST"
-          value = "mongodb" # Service Connect alias - this resolves automatically!
+          value = "host.docker.internal" # Fallback - will be updated via null_resource
         },
         {
           name  = "MONGODB_PORT"
@@ -332,55 +331,17 @@ resource "aws_ecs_task_definition" "django" {
     }
   ])
 
-  tags = var.tags
+  depends_on = [time_sleep.wait_for_mongodb]
+  tags       = var.tags
 }
 
-# MongoDB ECS Service with Service Connect
-resource "aws_ecs_service" "mongodb" {
-  name            = "mongodb-pr-${var.pr_number}"
-  cluster         = var.cluster_id
-  task_definition = aws_ecs_task_definition.mongodb.arn
-  desired_count   = 1
-  launch_type     = "FARGATE"
-
-  network_configuration {
-    subnets          = var.private_subnets
-    security_groups  = [aws_security_group.mongodb.id]
-    assign_public_ip = false
-  }
-
-  # Service Connect configuration for MongoDB
-  service_connect_configuration {
-    enabled   = true
-    namespace = aws_service_discovery_private_dns_namespace.pr.arn
-
-    service {
-      client_alias {
-        port     = 27017
-        dns_name = "mongodb"
-      }
-
-      port_name      = "mongodb-port"
-      discovery_name = "mongodb"
-    }
-  }
-
-  # Health check grace period for MongoDB startup
-  health_check_grace_period_seconds = 120
-
-  tags = var.tags
-}
-
-# Django ECS Service with Service Connect
+# Django ECS Service
 resource "aws_ecs_service" "django" {
   name            = "django-pr-${var.pr_number}"
   cluster         = var.cluster_id
   task_definition = aws_ecs_task_definition.django.arn
   desired_count   = 1
   launch_type     = "FARGATE"
-
-  # Django depends on MongoDB being ready
-  depends_on = [aws_ecs_service.mongodb]
 
   network_configuration {
     subnets          = var.private_subnets
@@ -394,14 +355,86 @@ resource "aws_ecs_service" "django" {
     container_port   = 8000
   }
 
-  # Service Connect configuration for Django (client only)
-  service_connect_configuration {
-    enabled   = true
-    namespace = aws_service_discovery_private_dns_namespace.pr.arn
+  depends_on = [aws_ecs_service.mongodb, aws_lb_listener_rule.django, time_sleep.wait_for_mongodb]
+  tags       = var.tags
+}
+
+# Wait for services to be running
+resource "time_sleep" "wait_for_services" {
+  depends_on      = [aws_ecs_service.django, aws_ecs_service.mongodb]
+  create_duration = "120s"
+}
+
+# Null resource to update Django with MongoDB IP after deployment
+resource "null_resource" "update_django_with_mongodb_ip" {
+  depends_on = [time_sleep.wait_for_services]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      # Wait for MongoDB to be running and get its IP
+      echo "Waiting for MongoDB to be running..."
+      for i in {1..30}; do
+        MONGODB_TASK=$(aws ecs list-tasks --cluster ${var.cluster_id} --service-name mongodb-pr-${var.pr_number} --desired-status RUNNING --query 'taskArns[0]' --output text --region ${data.aws_region.current.name})
+        if [ "$MONGODB_TASK" != "None" ] && [ "$MONGODB_TASK" != "" ]; then
+          MONGODB_IP=$(aws ecs describe-tasks --cluster ${var.cluster_id} --tasks $MONGODB_TASK --query 'tasks[0].attachments[0].details[?name==`privateIPv4Address`].value' --output text --region ${data.aws_region.current.name})
+          if [ "$MONGODB_IP" != "" ] && [ "$MONGODB_IP" != "None" ]; then
+            echo "Found MongoDB IP: $MONGODB_IP"
+            
+            # Update Django task definition with MongoDB IP
+            aws ecs register-task-definition \
+              --family django-pr-${var.pr_number} \
+              --network-mode awsvpc \
+              --requires-compatibilities FARGATE \
+              --cpu 256 \
+              --memory 512 \
+              --execution-role-arn ${var.execution_role_arn} \
+              --container-definitions "[{
+                \"name\": \"django\",
+                \"image\": \"${var.django_image}\",
+                \"portMappings\": [{\"containerPort\": 8000, \"protocol\": \"tcp\"}],
+                \"environment\": [
+                  {\"name\": \"MONGODB_HOST\", \"value\": \"$MONGODB_IP\"},
+                  {\"name\": \"MONGODB_PORT\", \"value\": \"27017\"},
+                  {\"name\": \"MONGODB_DATABASE\", \"value\": \"mercor_pr_${var.pr_number}\"},
+                  {\"name\": \"DEBUG\", \"value\": \"True\"},
+                  {\"name\": \"PR_NUMBER\", \"value\": \"${var.pr_number}\"}
+                ],
+                \"logConfiguration\": {
+                  \"logDriver\": \"awslogs\",
+                  \"options\": {
+                    \"awslogs-group\": \"${aws_cloudwatch_log_group.django.name}\",
+                    \"awslogs-region\": \"${data.aws_region.current.name}\",
+                    \"awslogs-stream-prefix\": \"ecs\"
+                  }
+                },
+                \"essential\": true
+              }]" \
+              --region ${data.aws_region.current.name}
+            
+            # Get latest task definition revision
+            LATEST_REVISION=$(aws ecs describe-task-definition --task-definition django-pr-${var.pr_number} --query 'taskDefinition.revision' --output text --region ${data.aws_region.current.name})
+            
+            # Update Django service to use new task definition
+            aws ecs update-service \
+              --cluster ${var.cluster_id} \
+              --service django-pr-${var.pr_number} \
+              --task-definition django-pr-${var.pr_number}:$LATEST_REVISION \
+              --force-new-deployment \
+              --region ${data.aws_region.current.name}
+            
+            echo "Updated Django service with MongoDB IP: $MONGODB_IP"
+            break
+          fi
+        fi
+        echo "Attempt $i: MongoDB not ready, waiting 10 seconds..."
+        sleep 10
+      done
+    EOT
   }
 
-  # Health check grace period for Django startup
-  health_check_grace_period_seconds = 120
-
-  tags = var.tags
+  # Trigger this resource when services change
+  triggers = {
+    mongodb_service = aws_ecs_service.mongodb.id
+    django_service  = aws_ecs_service.django.id
+  }
 }
