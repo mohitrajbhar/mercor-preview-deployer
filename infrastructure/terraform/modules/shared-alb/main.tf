@@ -74,17 +74,19 @@ resource "aws_lb_listener" "https" {
   port              = "443"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
-  certificate_arn   = data.aws_acm_certificate.main.arn
+  certificate_arn   = var.certificate_arn # Use the passed certificate ARN
 
   default_action {
     type = "fixed-response"
 
     fixed_response {
-      content_type = "text/plain"
-      message_body = "No matching PR environment found"
-      status_code  = "404"
+      content_type = "text/html"
+      message_body = "<h1>Welcome to Mercor Preview Environment</h1><p>No PR environment found for this URL.</p>"
+      status_code  = "200"
     }
   }
+
+  tags = var.tags
 }
 
 # Route53 record for ALB

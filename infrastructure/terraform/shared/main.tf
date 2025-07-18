@@ -60,11 +60,12 @@ module "vpc" {
 module "alb" {
   source = "../modules/shared-alb"
 
-  name_prefix    = "mercor-shared"
-  vpc_id         = module.vpc.vpc_id
-  public_subnets = module.vpc.public_subnets
-  domain_name    = var.domain_name
-  hosted_zone_id = data.aws_route53_zone.main.zone_id
+  name_prefix     = "mercor-shared"
+  vpc_id          = module.vpc.vpc_id
+  public_subnets  = module.vpc.public_subnets
+  certificate_arn = module.acm_certificate.certificate_arn
+  domain_name     = var.domain_name
+  hosted_zone_id  = data.aws_route53_zone.main.zone_id
 
   tags = local.common_tags
 }
