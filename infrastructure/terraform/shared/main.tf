@@ -39,7 +39,7 @@ locals {
 
 # ACM Certificate Module
 module "acm_certificate" {
-  source = "../../modules/acm-certificate"
+  source = "../modules/acm-certificate"
 
   domain_name = local.domain_name
   tags        = local.common_tags
