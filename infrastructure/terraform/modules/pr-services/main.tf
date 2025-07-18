@@ -15,7 +15,7 @@ data "terraform_remote_state" "shared" {
   }
 }
 
-# EFS Access Point for this PR
+# EFS Access Point for this PR 
 resource "aws_efs_access_point" "mongodb" {
   file_system_id = var.efs_id
 
