@@ -299,7 +299,7 @@ resource "aws_ecs_task_definition" "django" {
       environment = [
         {
           name  = "MONGODB_HOST"
-          value = "mongodb"  # Service Connect alias - this resolves automatically!
+          value = "mongodb" # Service Connect alias - this resolves automatically!
         },
         {
           name  = "MONGODB_PORT"
@@ -402,8 +402,6 @@ resource "aws_ecs_service" "django" {
 
   # Health check grace period for Django startup
   health_check_grace_period_seconds = 120
-
-  depends_on = [aws_ecs_service.mongodb, aws_lb_listener_rule.django]
 
   tags = var.tags
 }
