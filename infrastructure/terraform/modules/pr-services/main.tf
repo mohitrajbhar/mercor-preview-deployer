@@ -102,13 +102,6 @@ resource "aws_security_group" "django" {
   }
 
   egress {
-    from_port       = 27017
-    to_port         = 27017
-    protocol        = "tcp"
-    security_groups = [aws_security_group.mongodb.id]
-  }
-
-  egress {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -132,13 +125,6 @@ resource "aws_security_group" "mongodb" {
   description = "Security group for MongoDB service PR ${var.pr_number}"
   vpc_id      = var.vpc_id
 
-  ingress {
-    from_port       = 27017
-    to_port         = 27017
-    protocol        = "tcp"
-    security_groups = [aws_security_group.django.id]
-  }
-
   egress {
     from_port       = 2049
     to_port         = 2049
@@ -149,6 +135,25 @@ resource "aws_security_group" "mongodb" {
   tags = merge(var.tags, {
     Name = "mongodb-sg-pr-${var.pr_number}"
   })
+}
+
+# Separate rule to avoid circular dependency
+resource "aws_security_group_rule" "django_to_mongodb" {
+  type                     = "egress"
+  from_port                = 27017
+  to_port                  = 27017
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.django.id
+  source_security_group_id = aws_security_group.mongodb.id
+}
+
+resource "aws_security_group_rule" "mongodb_from_django" {
+  type                     = "ingress"
+  from_port                = 27017
+  to_port                  = 27017
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.mongodb.id
+  source_security_group_id = aws_security_group.django.id
 }
 
 # ALB Target Group
