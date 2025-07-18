@@ -120,6 +120,8 @@ jobs:
         HEALTHCHECK_URL="https://${{ steps.terraform-outputs.outputs.deployment_url }}"
         
         echo "🔍 Running health checks..."
+
+        sleep 60
         
         # Test health endpoint
         echo "Testing health endpoint..."
