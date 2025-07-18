@@ -369,7 +369,7 @@ def user_list(request):
 @csrf_exempt
 @require_http_methods(["GET", "PUT", "DELETE"])
 def user_detail(request, user_id):
-    """Get, update, or delete a specific user"""
+    """Get, update, or delete a specific user - FIXED VERSION"""
     try:
         users_collection = mongodb_client.get_collection('users')
         if not users_collection:
@@ -380,7 +380,8 @@ def user_detail(request, user_id):
     
         if request.method == 'GET':
             user = users_collection.find_one({'_id': ObjectId(user_id)})
-            if user:
+            # ✅ FIXED: Changed from "if user:" to "if user is not None:"
+            if user is not None:
                 user['_id'] = str(user['_id'])
                 if 'created_at' in user and hasattr(user['created_at'], 'isoformat'):
                     user['created_at'] = user['created_at'].isoformat()
