@@ -324,7 +324,7 @@ resource "aws_ecs_task_definition" "django" {
       environment = [
         {
           name  = "MONGODB_HOST"
-          value = "mongodb.pr-${var.pr_number}.local"
+          value = "mongodb-pr-${var.pr_number}" # Service name that resolves to actual IP
         },
         {
           name  = "MONGODB_PORT"
@@ -353,15 +353,12 @@ resource "aws_ecs_task_definition" "django" {
         }
       }
 
-      healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:8000/health/ || exit 1"]
-        interval    = 30
-        timeout     = 5
-        retries     = 3
-        startPeriod = 60
-      }
+      essential = true
     }
   ])
+
+  # Django task depends on MongoDB service being created first
+  depends_on = [aws_ecs_service.mongodb]
 
   tags = var.tags
 }
@@ -383,6 +380,9 @@ resource "aws_ecs_service" "mongodb" {
   service_registries {
     registry_arn = aws_service_discovery_service.mongodb.arn
   }
+
+  # ADDED: Health check grace period for MongoDB startup
+  health_check_grace_period_seconds = 120
 
   tags = var.tags
 }
@@ -411,6 +411,9 @@ resource "aws_ecs_service" "django" {
   }
 
   depends_on = [aws_ecs_service.mongodb, aws_lb_listener_rule.django]
+
+  # ADDED: Health check grace period for Django startup
+  health_check_grace_period_seconds = 120
 
   tags = var.tags
 }
