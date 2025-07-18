@@ -38,6 +38,46 @@ output "alb_security_group_id" {
   value       = module.alb.security_group_id
 }
 
+output "alb_dns_name" {
+  description = "ALB DNS name"
+  value       = module.alb.alb_dns_name
+}
+
+output "alb_zone_id" {
+  description = "ALB zone ID"
+  value       = module.alb.alb_zone_id
+}
+
+output "efs_id" {
+  description = "EFS file system ID"
+  value       = module.efs.file_system_id
+}
+
+output "efs_security_group_id" {
+  description = "EFS security group ID"
+  value       = module.efs.security_group_id
+}
+
+output "execution_role_arn" {
+  description = "ECS execution role ARN"
+  value       = module.ecs_cluster.execution_role_arn
+}
+
+output "task_role_arn" {
+  description = "ECS task role ARN"
+  value       = module.ecs_cluster.task_role_arn
+}
+
+output "alb_dns_name" {
+  description = "ALB DNS name"
+  value       = module.alb.alb_dns_name
+}
+
+output "alb_zone_id" {
+  description = "ALB zone ID"
+  value       = module.alb.alb_zone_id
+}
+
 output "efs_id" {
   description = "EFS file system ID"
   value       = module.efs.file_system_id
