@@ -1,8 +1,3 @@
-data "aws_acm_certificate" "main" {
-  domain   = "*.${var.domain_name}"
-  statuses = ["ISSUED"]
-}
-
 resource "aws_security_group" "alb" {
   name        = "${var.name_prefix}-alb"
   description = "Security group for shared ALB"
@@ -89,5 +84,18 @@ resource "aws_lb_listener" "https" {
       message_body = "No matching PR environment found"
       status_code  = "404"
     }
+  }
+}
+
+# Route53 record for ALB
+resource "aws_route53_record" "alb" {
+  zone_id = var.hosted_zone_id
+  name    = "*.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.main.dns_name
+    zone_id                = aws_lb.main.zone_id
+    evaluate_target_health = true
   }
 }
