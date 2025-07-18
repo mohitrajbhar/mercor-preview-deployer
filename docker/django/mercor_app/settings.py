@@ -8,7 +8,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SECRET_KEY = config('SECRET_KEY', default='django-insecure-change-me-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', default=False, cast=bool)
+DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = ['*']  # Configure appropriately for production
 
@@ -20,6 +20,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
     'corsheaders',
     'api',
 ]
@@ -41,7 +42,7 @@ ROOT_URLCONF = 'mercor_app.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, 'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -56,16 +57,29 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'mercor_app.wsgi.application'
 
-# Database
+# Database - Using SQLite for Django admin/auth, MongoDB for application data
 DATABASES = {
     'default': {
-        'ENGINE': 'djongo',
-        'NAME': config('MONGODB_DATABASE', default='mercor_dev'),
-        'CLIENT': {
-            'host': config('MONGODB_HOST', default='localhost'),
-            'port': int(config('MONGODB_PORT', default=27017)),
-        }
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
     }
+}
+
+# MongoDB Configuration
+MONGODB_SETTINGS = {
+    'host': config('MONGODB_HOST', default='localhost'),
+    'port': int(config('MONGODB_PORT', default=27017)),
+    'database': config('MONGODB_DATABASE', default='mercor_dev'),
+}
+
+# Django Rest Framework
+REST_FRAMEWORK = {
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',
+    ],
 }
 
 # Internationalization
