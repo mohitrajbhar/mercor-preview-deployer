@@ -15,7 +15,7 @@ data "terraform_remote_state" "shared" {
   }
 }
 
-# EFS Access Point for this PR 
+# EFS Access Point for this PR
 resource "aws_efs_access_point" "mongodb" {
   file_system_id = var.efs_id
 
@@ -327,7 +327,7 @@ resource "null_resource" "update_django_with_mongodb_ip" {
     command = <<-EOT
       # Wait for MongoDB to be running and get its IP
       echo "Waiting for MongoDB to be running..."
-      for i in {1..30}; do
+      for i in {1..20}; do
         MONGODB_TASK=$(aws ecs list-tasks --cluster ${var.cluster_id} --service-name mongodb-pr-${var.pr_number} --desired-status RUNNING --query 'taskArns[0]' --output text --region ${data.aws_region.current.name})
         if [ "$MONGODB_TASK" != "None" ] && [ "$MONGODB_TASK" != "" ]; then
           MONGODB_IP=$(aws ecs describe-tasks --cluster ${var.cluster_id} --tasks $MONGODB_TASK --query 'tasks[0].attachments[0].details[?name==`privateIPv4Address`].value' --output text --region ${data.aws_region.current.name})
@@ -368,20 +368,7 @@ resource "null_resource" "update_django_with_mongodb_ip" {
             # Get latest task definition revision
             LATEST_REVISION=$(aws ecs describe-task-definition --task-definition django-pr-${var.pr_number} --query 'taskDefinition.revision' --output text --region ${data.aws_region.current.name})
             
-            # Stop all current Django tasks first to avoid conflicts
-            echo "Stopping existing Django tasks..."
-            EXISTING_TASKS=$(aws ecs list-tasks --cluster ${var.cluster_id} --service-name django-pr-${var.pr_number} --query 'taskArns' --output text --region ${data.aws_region.current.name})
-            for task in $EXISTING_TASKS; do
-              if [ "$task" != "" ] && [ "$task" != "None" ]; then
-                aws ecs stop-task --cluster ${var.cluster_id} --task $task --reason "Updating to use MongoDB IP" --region ${data.aws_region.current.name}
-              fi
-            done
-            
-            # Wait for tasks to stop
-            echo "Waiting for old tasks to stop..."
-            sleep 30
-            
-            # Update Django service to use new task definition
+            # Update Django service to use new task definition (without waiting)
             aws ecs update-service \
               --cluster ${var.cluster_id} \
               --service django-pr-${var.pr_number} \
@@ -389,16 +376,8 @@ resource "null_resource" "update_django_with_mongodb_ip" {
               --force-new-deployment \
               --region ${data.aws_region.current.name}
             
-            echo "Updated Django service with MongoDB IP: $MONGODB_IP"
-            
-            # Wait for new deployment to be stable
-            echo "Waiting for deployment to stabilize..."
-            aws ecs wait services-stable \
-              --cluster ${var.cluster_id} \
-              --services django-pr-${var.pr_number} \
-              --region ${data.aws_region.current.name}
-            
-            echo "Deployment completed successfully!"
+            echo "✅ Updated Django service with MongoDB IP: $MONGODB_IP"
+            echo "🎉 Automation completed! Django will restart with the correct MongoDB IP."
             break
           fi
         fi
