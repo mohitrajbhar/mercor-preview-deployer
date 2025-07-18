@@ -68,21 +68,6 @@ output "task_role_arn" {
   value       = module.ecs_cluster.task_role_arn
 }
 
-output "alb_dns_name" {
-  description = "ALB DNS name"
-  value       = module.alb.alb_dns_name
-}
-
-output "alb_zone_id" {
-  description = "ALB zone ID"
-  value       = module.alb.alb_zone_id
-}
-
-output "efs_id" {
-  description = "EFS file system ID"
-  value       = module.efs.file_system_id
-}
-
 output "domain_name" {
   description = "Domain name"
   value       = var.domain_name
