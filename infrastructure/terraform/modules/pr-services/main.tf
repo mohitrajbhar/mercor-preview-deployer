@@ -64,7 +64,7 @@ resource "aws_efs_access_point" "mongodb" {
     creation_info {
       owner_gid   = 999
       owner_uid   = 999
-      permissions = "755"
+      permissions = "0755"
     }
   }
 
@@ -94,6 +94,7 @@ resource "aws_security_group" "django" {
   description = "Security group for Django service PR ${var.pr_number}"
   vpc_id      = var.vpc_id
 
+  # Ingress: Allow ALB to reach Django
   ingress {
     from_port       = 8000
     to_port         = 8000
@@ -101,18 +102,31 @@ resource "aws_security_group" "django" {
     security_groups = [var.alb_security_group_id]
   }
 
+  # Egress: Allow HTTPS for package downloads, API calls
   egress {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTPS outbound for package downloads and API calls"
   }
 
+  # Egress: Allow HTTP for redirects and package downloads
+  egress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTP outbound for redirects and package downloads"
+  }
+
+  # Egress: Allow DNS resolution
   egress {
     from_port   = 53
     to_port     = 53
     protocol    = "udp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "DNS resolution"
   }
 
   tags = merge(var.tags, {
@@ -125,11 +139,40 @@ resource "aws_security_group" "mongodb" {
   description = "Security group for MongoDB service PR ${var.pr_number}"
   vpc_id      = var.vpc_id
 
+  # Egress: Allow HTTPS for Docker image pulls
+  egress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTPS outbound for Docker image pulls"
+  }
+
+  # Egress: Allow HTTP for Docker image pulls and redirects
+  egress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTP outbound for Docker image pulls"
+  }
+
+  # Egress: Allow DNS resolution
+  egress {
+    from_port   = 53
+    to_port     = 53
+    protocol    = "udp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "DNS resolution"
+  }
+
+  # Egress: Allow EFS access
   egress {
     from_port       = 2049
     to_port         = 2049
     protocol        = "tcp"
     security_groups = [var.efs_security_group_id]
+    description     = "EFS access for persistent storage"
   }
 
   tags = merge(var.tags, {
@@ -137,7 +180,7 @@ resource "aws_security_group" "mongodb" {
   })
 }
 
-# Separate rule to avoid circular dependency
+# Separate rules to avoid circular dependency
 resource "aws_security_group_rule" "django_to_mongodb" {
   type                     = "egress"
   from_port                = 27017
@@ -145,6 +188,7 @@ resource "aws_security_group_rule" "django_to_mongodb" {
   protocol                 = "tcp"
   security_group_id        = aws_security_group.django.id
   source_security_group_id = aws_security_group.mongodb.id
+  description              = "Django to MongoDB communication"
 }
 
 resource "aws_security_group_rule" "mongodb_from_django" {
@@ -154,6 +198,7 @@ resource "aws_security_group_rule" "mongodb_from_django" {
   protocol                 = "tcp"
   security_group_id        = aws_security_group.mongodb.id
   source_security_group_id = aws_security_group.django.id
+  description              = "MongoDB accepts connections from Django"
 }
 
 # ALB Target Group
@@ -214,8 +259,8 @@ resource "aws_ecs_task_definition" "mongodb" {
   family                   = "mongodb-pr-${var.pr_number}"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = "256"
-  memory                   = "512"
+  cpu                      = "512"
+  memory                   = "1024"
   execution_role_arn       = var.execution_role_arn
   task_role_arn            = var.task_role_arn
 
@@ -238,13 +283,6 @@ resource "aws_ecs_task_definition" "mongodb" {
         }
       ]
 
-      mountPoints = [
-        {
-          sourceVolume  = "mongodb-data"
-          containerPath = "/data/db"
-        }
-      ]
-
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -254,28 +292,9 @@ resource "aws_ecs_task_definition" "mongodb" {
         }
       }
 
-      healthCheck = {
-        command     = ["CMD-SHELL", "mongosh --eval 'db.runCommand(\"ping\").ok' --quiet || exit 1"]
-        interval    = 30
-        timeout     = 10
-        retries     = 3
-        startPeriod = 60
-      }
+      essential = true
     }
   ])
-
-  volume {
-    name = "mongodb-data"
-
-    efs_volume_configuration {
-      file_system_id     = var.efs_id
-      transit_encryption = "ENABLED"
-      authorization_config {
-        access_point_id = aws_efs_access_point.mongodb.id
-        iam             = "ENABLED"
-      }
-    }
-  }
 
   tags = var.tags
 }
