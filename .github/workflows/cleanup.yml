@@ -140,13 +140,7 @@ jobs:
           
           const body = `🚀 **PR Environment Deployed Successfully!**
           
-          **🌐 Deployment URL:** https://${deploymentUrl}
-          
-          **📋 Available Endpoints:**
-          - Health Check: https://${deploymentUrl}/health/
-          - API Users: https://${deploymentUrl}/api/users/
-          - Database Test: https://${deploymentUrl}/api/test-db/
-          - Admin Panel: https://${deploymentUrl}/admin/
+          **🌐 Health Check: https://${deploymentUrl}/health/
           
           **🗃️ Services Status:**
           - ✅ Django Application: Running on shared ECS cluster
@@ -158,14 +152,6 @@ jobs:
           \`\`\`bash
           # Test health endpoint
           curl https://${deploymentUrl}/health/
-          
-          # Create a test user
-          curl -X POST https://${deploymentUrl}/api/users/ \\
-            -H "Content-Type: application/json" \\
-            -d '{"name": "Test User", "email": "test@example.com"}'
-          
-          # Get all users
-          curl https://${deploymentUrl}/api/users/
           \`\`\`
           
           **🔧 Infrastructure:**
@@ -173,11 +159,6 @@ jobs:
           - ECS Services: \`django-pr-${prNumber}\`, \`mongodb-pr-${prNumber}\`
           - Isolated EFS storage path: \`/pr-${prNumber}\`
           - Service Discovery: \`pr-${prNumber}.local\`
-          
-          **💰 Cost Benefits:**
-          - Shared NAT Gateway and ALB (85% networking cost reduction)
-          - Isolated application and database per PR
-          - Auto-cleanup on PR close/merge
           
           This environment will be automatically destroyed when the PR is closed or merged.`;
           

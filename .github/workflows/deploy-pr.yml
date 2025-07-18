@@ -54,7 +54,7 @@ jobs:
         IMAGE_TAG: pr-${{ github.event.number }}
       run: |
         # Build Docker image
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./docker/django
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./django_app
         
         # Create ECR repository if it doesn't exist
         aws ecr describe-repositories --repository-names $ECR_REPOSITORY || \
@@ -143,13 +143,7 @@ jobs:
           
           const body = `**PR Environment Deployed Successfully!**
           
-          **Deployment URL:** https://${deploymentUrl}
-          
-          **Available Endpoints:**
-          - Health Check: https://${deploymentUrl}/health/
-          - API Users: https://${deploymentUrl}/api/users/
-          - Database Test: https://${deploymentUrl}/api/test-db/
-          - Admin Panel: https://${deploymentUrl}/admin/
+          **Health Check: https://${deploymentUrl}/health/
           
           **🗃️ Services Status:**
           - Django Application: Running on shared ECS cluster
@@ -162,13 +156,6 @@ jobs:
           # Test health endpoint
           curl https://${deploymentUrl}/health/
           
-          # Create a test user
-          curl -X POST https://${deploymentUrl}/api/users/ \\
-            -H "Content-Type: application/json" \\
-            -d '{"name": "Test User", "email": "test@example.com"}'
-          
-          # Get all users
-          curl https://${deploymentUrl}/api/users/
           \`\`\`
           
           **🔧 Infrastructure:**
