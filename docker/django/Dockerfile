@@ -14,7 +14,7 @@ RUN apt-get update \
         build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Install Python  dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
