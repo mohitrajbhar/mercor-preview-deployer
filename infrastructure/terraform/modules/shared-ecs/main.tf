@@ -21,7 +21,6 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
   }
 }
 
-# Base IAM roles that PR services can use
 resource "aws_iam_role" "ecs_execution_role" {
   name = "${var.name_prefix}-ecs-execution-role"
 

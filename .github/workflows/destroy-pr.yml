@@ -86,11 +86,11 @@ jobs:
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            body: `🧹 **PR Environment Cleaned Up**
+            body: `**PR Environment Cleaned Up**
             
             The PR environment for #${prNumber} has been successfully destroyed after the PR was ${action}.
             
-            **🗑️ Resources removed:**
+            **Resources removed:**
             - ECS Cluster: \`cluster-pr-${prNumber}\`
             - VPC and networking components
             - Application Load Balancer
@@ -99,7 +99,7 @@ jobs:
             - ECR Docker image
             - All associated security groups and IAM roles
             
-            Thank you for using the PR deployment system! 🚀`
+            Thank you for using the PR deployment system! `
           });
 
   notify-failure:
@@ -116,7 +116,7 @@ jobs:
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            body: `⚠️ **Environment Cleanup Failed**
+            body: `**Environment Cleanup Failed**
             
             The cleanup process for PR #${{ github.event.number }} encountered issues. Please check the [GitHub Actions logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
             

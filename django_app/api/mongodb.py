@@ -28,9 +28,9 @@ class MongoDBClient:
             self._database = self._client[mongo_settings['database']]
             # Test connection
             self._client.admin.command('ping')
-            print(f"✅ Connected to MongoDB: {mongo_settings['host']}:{mongo_settings['port']}/{mongo_settings['database']}")
+            print(f"Connected to MongoDB: {mongo_settings['host']}:{mongo_settings['port']}/{mongo_settings['database']}")
         except Exception as e:
-            print(f"❌ MongoDB connection failed: {e}")
+            print(f"MongoDB connection failed: {e}")
             self._client = None
             self._database = None
 

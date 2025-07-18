@@ -37,7 +37,6 @@ locals {
   }
 }
 
-# ACM Certificate Module
 module "acm_certificate" {
   source = "../modules/acm-certificate"
 
@@ -45,7 +44,6 @@ module "acm_certificate" {
   tags        = local.common_tags
 }
 
-# Shared VPC
 module "vpc" {
   source = "../modules/shared-vpc"
 
@@ -56,7 +54,6 @@ module "vpc" {
   tags = local.common_tags
 }
 
-# Shared ALB
 module "alb" {
   source = "../modules/shared-alb"
 
@@ -70,7 +67,6 @@ module "alb" {
   tags = local.common_tags
 }
 
-# Shared ECS Cluster
 module "ecs_cluster" {
   source = "../modules/shared-ecs"
 
@@ -81,7 +77,6 @@ module "ecs_cluster" {
   tags = local.common_tags
 }
 
-# Shared EFS for MongoDB storage
 module "efs" {
   source = "../modules/shared-efs"
 

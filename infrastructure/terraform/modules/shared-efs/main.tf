@@ -40,7 +40,6 @@ resource "aws_efs_mount_target" "main" {
   security_groups = [aws_security_group.efs.id]
 }
 
-# Enable automatic backups
 resource "aws_efs_backup_policy" "main" {
   file_system_id = aws_efs_file_system.main.id
 

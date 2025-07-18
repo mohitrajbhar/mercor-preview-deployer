@@ -2,7 +2,7 @@ name: Cleanup Old Resources
 
 on:
   schedule:
-    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+    - cron: '0 0 * * 0'  # Weekly at 12 AM UTC
   workflow_dispatch:
 
 env:
@@ -24,7 +24,7 @@ jobs:
       run: |
         REPOSITORY="mercor-django"
         
-        echo "🧹 Cleaning up old ECR images..."
+        echo "Cleaning up old ECR images..."
         
         # Keep only the latest 10 images, delete older ones
         aws ecr describe-images \
@@ -40,11 +40,11 @@ jobs:
           fi
         done
         
-        echo "✅ ECR cleanup completed"
+        echo "ECR cleanup completed"
     
     - name: Check for orphaned resources
       run: |
-        echo "🔍 Checking for orphaned resources..."
+        echo "Checking for orphaned resources..."
         
         # Check for services without corresponding PRs
         CLUSTER_NAME=$(aws s3 cp s3://mercor-terraform-state/shared-infrastructure/terraform.tfstate - | jq -r '.outputs.cluster_name.value')
@@ -61,7 +61,7 @@ jobs:
           fi
         done
         
-        echo "✅ Orphaned resource check completed" hashicorp/setup-terraform@v3
+        echo "Orphaned resource check completed" hashicorp/setup-terraform@v3
       with:
         terraform_version: 1.5.0
         terraform_wrapper: false
@@ -102,16 +102,16 @@ jobs:
     
     - name: Wait for deployment to be ready
       run: |
-        echo "⏳ Waiting for deployment to be ready..."
+        echo "Waiting for deployment to be ready..."
         HEALTHCHECK_URL="https://${{ steps.terraform-outputs.outputs.deployment_url }}"
         
         # Wait up to 10 minutes for the service to be healthy
         for i in {1..60}; do
           if curl -f -s "$HEALTHCHECK_URL/health/" > /dev/null; then
-            echo "✅ Deployment is healthy!"
+            echo "Deployment is healthy!"
             break
           fi
-          echo "⏳ Waiting for deployment... (attempt $i/60)"
+          echo "Waiting for deployment... (attempt $i/60)"
           sleep 10
         done
     
@@ -119,7 +119,7 @@ jobs:
       run: |
         HEALTHCHECK_URL="https://${{ steps.terraform-outputs.outputs.deployment_url }}"
         
-        echo "🔍 Running health checks..."
+        echo "Running health checks..."
 
         sleep 60
         
@@ -127,7 +127,7 @@ jobs:
         echo "Testing health endpoint..."
         curl -f "$HEALTHCHECK_URL/health/" | jq .
         
-        echo "✅ All health checks passed!"
+        echo "All health checks passed!"
     
     - name: Comment PR with deployment info
       uses: actions/github-script@v7
@@ -136,23 +136,23 @@ jobs:
           const deploymentUrl = '${{ steps.terraform-outputs.outputs.deployment_url }}';
           const prNumber = context.issue.number;
           
-          const body = `🚀 **PR Environment Deployed Successfully!**
+          const body = `**PR Environment Deployed Successfully!**
           
-          **🌐 Health Check: https://${deploymentUrl}/health/
+          **Health Check: https://${deploymentUrl}/health/
           
-          **🗃️ Services Status:**
-          - ✅ Django Application: Running on shared ECS cluster
-          - ✅ MongoDB Database: Connected with isolated storage
-          - ✅ SSL Certificate: Active (shared ALB)
-          - ✅ Load Balancer: Healthy routing
+          **Services Status:**
+          - Django Application: Running on shared ECS cluster
+          - MongoDB Database: Connected with isolated storage
+          - SSL Certificate: Active (shared ALB)
+          - Load Balancer: Healthy routing
           
-          **💡 How to test:**
+          **How to test:**
           \`\`\`bash
           # Test health endpoint
           curl https://${deploymentUrl}/health/
           \`\`\`
           
-          **🔧 Infrastructure:**
+          **Infrastructure:**
           - Shared VPC and networking (cost-optimized)
           - ECS Services: \`django-pr-${prNumber}\`, \`mongodb-pr-${prNumber}\`
           - Isolated EFS storage path: \`/pr-${prNumber}\`
@@ -181,7 +181,7 @@ jobs:
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            body: `❌ **PR Environment Deployment Failed**
+            body: `**PR Environment Deployment Failed**
             
             The deployment for PR #${{ github.event.number }} has failed. Please check the [GitHub Actions logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for more details.
             

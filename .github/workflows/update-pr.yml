@@ -65,14 +65,14 @@ jobs:
           --service mongodb-pr-${{ inputs.pr_number }} \
           --force-new-deployment
         
-        echo "✅ ECS service updates initiated"
+        echo "ECS service updates initiated"
     
     - name: Wait for deployment to stabilize
       run: |
         # Get cluster name from shared infrastructure
         CLUSTER_NAME=$(aws s3 cp s3://mercor-terraform-state/shared-infrastructure/terraform.tfstate - | jq -r '.outputs.cluster_name.value')
         
-        echo "⏳ Waiting for ECS services to stabilize..."
+        echo "Waiting for ECS services to stabilize..."
         
         # Wait for Django service
         aws ecs wait services-stable \
@@ -84,19 +84,19 @@ jobs:
           --cluster $CLUSTER_NAME \
           --services mongodb-pr-${{ inputs.pr_number }}
         
-        echo "✅ ECS services are stable"
+        echo "ECS services are stable"
     
     - name: Verify deployment
       run: |
         HEALTHCHECK_URL="https://pr-${{ inputs.pr_number }}.${{ env.DOMAIN_NAME }}"
         
-        echo "🔍 Verifying updated deployment..."
+        echo "Verifying updated deployment..."
         
         # Test health endpoint
         if curl -f -s "$HEALTHCHECK_URL/health/" > /dev/null; then
-          echo "✅ Health check passed"
+          echo "Health check passed"
           curl -s "$HEALTHCHECK_URL/health/" | jq .
         else
-          echo "❌ Health check failed"
+          echo "Health check failed"
           exit 1
         fi

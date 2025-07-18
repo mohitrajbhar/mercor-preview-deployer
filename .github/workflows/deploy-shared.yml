@@ -62,7 +62,7 @@ jobs:
       env:
         TF_VAR_domain_name: ${{ env.DOMAIN_NAME }}
       run: |
-        echo "⚠️ This will destroy ALL shared infrastructure!"
+        echo "This will destroy ALL shared infrastructure!"
         echo "Make sure no PR environments are currently running."
         terraform destroy -auto-approve
     

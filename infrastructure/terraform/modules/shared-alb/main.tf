@@ -41,7 +41,6 @@ resource "aws_lb" "main" {
   tags = var.tags
 }
 
-# Default target group (returns 404 for unknown hosts)
 resource "aws_lb_target_group" "default" {
   name     = "${var.name_prefix}-default"
   port     = 80
@@ -51,7 +50,6 @@ resource "aws_lb_target_group" "default" {
   tags = var.tags
 }
 
-# HTTP Listener (redirect to HTTPS)
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = "80"
@@ -68,13 +66,12 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-# HTTPS Listener
 resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.main.arn
   port              = "443"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
-  certificate_arn   = var.certificate_arn # Use the passed certificate ARN
+  certificate_arn   = var.certificate_arn
 
   default_action {
     type = "fixed-response"
@@ -89,7 +86,6 @@ resource "aws_lb_listener" "https" {
   tags = var.tags
 }
 
-# Route53 record for ALB
 resource "aws_route53_record" "alb" {
   zone_id = var.hosted_zone_id
   name    = "*.${var.domain_name}"

@@ -1,9 +1,5 @@
-# infrastructure/terraform/modules/pr-services/main.tf
-# Simplified version without service discovery
-
 data "aws_region" "current" {}
 
-# Data source for shared infrastructure
 data "terraform_remote_state" "shared" {
   backend = "s3"
   config = {
@@ -15,7 +11,6 @@ data "terraform_remote_state" "shared" {
   }
 }
 
-# EFS Access Point for this PR
 resource "aws_efs_access_point" "mongodb" {
   file_system_id = var.efs_id
 
@@ -38,7 +33,6 @@ resource "aws_efs_access_point" "mongodb" {
   })
 }
 
-# CloudWatch Log Groups
 resource "aws_cloudwatch_log_group" "django" {
   name              = "/ecs/django-pr-${var.pr_number}"
   retention_in_days = 7
@@ -51,7 +45,6 @@ resource "aws_cloudwatch_log_group" "mongodb" {
   tags              = var.tags
 }
 
-# Security Groups with simplified rules
 resource "aws_security_group" "django" {
   name        = "django-pr-${var.pr_number}"
   description = "Security group for Django service PR ${var.pr_number}"
@@ -65,7 +58,6 @@ resource "aws_security_group" "django" {
     description     = "ALB to Django"
   }
 
-  # Allow all outbound traffic (simplified)
   egress {
     from_port   = 0
     to_port     = 0
@@ -92,7 +84,6 @@ resource "aws_security_group" "mongodb" {
     description = "MongoDB access from VPC"
   }
 
-  # Allow all outbound traffic (simplified)
   egress {
     from_port   = 0
     to_port     = 0
@@ -106,7 +97,6 @@ resource "aws_security_group" "mongodb" {
   })
 }
 
-# ALB Target Group
 resource "aws_lb_target_group" "django" {
   name        = "django-pr-${var.pr_number}"
   port        = 8000
@@ -129,7 +119,6 @@ resource "aws_lb_target_group" "django" {
   tags = var.tags
 }
 
-# ALB Listener Rule
 resource "aws_lb_listener_rule" "django" {
   listener_arn = var.alb_listener_arn
   priority     = var.pr_number
@@ -146,7 +135,6 @@ resource "aws_lb_listener_rule" "django" {
   }
 }
 
-# Route53 DNS Record
 resource "aws_route53_record" "pr" {
   zone_id = var.hosted_zone_id
   name    = "pr-${var.pr_number}.${var.domain_name}"
@@ -158,8 +146,6 @@ resource "aws_route53_record" "pr" {
     evaluate_target_health = true
   }
 }
-
-# MongoDB Task Definition
 resource "aws_ecs_task_definition" "mongodb" {
   family                   = "mongodb-pr-${var.pr_number}"
   network_mode             = "awsvpc"
@@ -204,7 +190,6 @@ resource "aws_ecs_task_definition" "mongodb" {
   tags = var.tags
 }
 
-# MongoDB ECS Service
 resource "aws_ecs_service" "mongodb" {
   name            = "mongodb-pr-${var.pr_number}"
   cluster         = var.cluster_id
@@ -221,13 +206,11 @@ resource "aws_ecs_service" "mongodb" {
   tags = var.tags
 }
 
-# Wait for MongoDB service to be stable
 resource "time_sleep" "wait_for_mongodb" {
   depends_on      = [aws_ecs_service.mongodb]
   create_duration = "60s"
 }
 
-# Django Task Definition (created after MongoDB)
 resource "aws_ecs_task_definition" "django" {
   family                   = "django-pr-${var.pr_number}"
   network_mode             = "awsvpc"
@@ -252,7 +235,7 @@ resource "aws_ecs_task_definition" "django" {
       environment = [
         {
           name  = "MONGODB_HOST"
-          value = "host.docker.internal" # Fallback - will be updated via null_resource
+          value = "host.docker.internal"
         },
         {
           name  = "MONGODB_PORT"
@@ -289,7 +272,6 @@ resource "aws_ecs_task_definition" "django" {
   tags       = var.tags
 }
 
-# Django ECS Service
 resource "aws_ecs_service" "django" {
   name            = "django-pr-${var.pr_number}"
   cluster         = var.cluster_id
@@ -313,13 +295,11 @@ resource "aws_ecs_service" "django" {
   tags       = var.tags
 }
 
-# Wait for services to be running
 resource "time_sleep" "wait_for_services" {
   depends_on      = [aws_ecs_service.django, aws_ecs_service.mongodb]
   create_duration = "120s"
 }
 
-# Null resource to update Django with MongoDB IP after deployment
 resource "null_resource" "update_django_with_mongodb_ip" {
   depends_on = [time_sleep.wait_for_services]
 
@@ -376,8 +356,8 @@ resource "null_resource" "update_django_with_mongodb_ip" {
               --force-new-deployment \
               --region ${data.aws_region.current.name}
             
-            echo "✅ Updated Django service with MongoDB IP: $MONGODB_IP"
-            echo "🎉 Automation completed! Django will restart with the correct MongoDB IP."
+            echo "Updated Django service with MongoDB IP: $MONGODB_IP"
+            echo "Automation completed! Django will restart with the correct MongoDB IP."
             break
           fi
         fi
@@ -387,7 +367,6 @@ resource "null_resource" "update_django_with_mongodb_ip" {
     EOT
   }
 
-  # Trigger this resource when services change
   triggers = {
     mongodb_service = aws_ecs_service.mongodb.id
     django_service  = aws_ecs_service.django.id
