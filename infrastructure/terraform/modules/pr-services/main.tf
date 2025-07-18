@@ -88,7 +88,7 @@ resource "aws_cloudwatch_log_group" "mongodb" {
   tags = var.tags
 }
 
-# Security Groups
+# Security Groups (without circular dependencies)
 resource "aws_security_group" "django" {
   name        = "django-pr-${var.pr_number}"
   description = "Security group for Django service PR ${var.pr_number}"
@@ -100,6 +100,7 @@ resource "aws_security_group" "django" {
     to_port         = 8000
     protocol        = "tcp"
     security_groups = [var.alb_security_group_id]
+    description     = "ALB to Django"
   }
 
   # Egress: Allow HTTPS for package downloads, API calls
@@ -166,7 +167,7 @@ resource "aws_security_group" "mongodb" {
     description = "DNS resolution"
   }
 
-  # Egress: Allow EFS access
+  # Egress: Allow EFS access (if we add persistent storage later)
   egress {
     from_port       = 2049
     to_port         = 2049
@@ -180,7 +181,7 @@ resource "aws_security_group" "mongodb" {
   })
 }
 
-# Separate rules to avoid circular dependency
+# Separate security group rules to avoid circular dependency
 resource "aws_security_group_rule" "django_to_mongodb" {
   type                     = "egress"
   from_port                = 27017
