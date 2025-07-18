@@ -12,40 +12,10 @@ data "terraform_remote_state" "shared" {
   }
 }
 
-# Service Discovery Namespace for this PR
+# Service Discovery Namespace for this PR (used by Service Connect)
 resource "aws_service_discovery_private_dns_namespace" "pr" {
   name = "pr-${var.pr_number}.local"
   vpc  = var.vpc_id
-
-  tags = var.tags
-}
-
-resource "aws_service_discovery_service" "django" {
-  name = "django"
-
-  dns_config {
-    namespace_id = aws_service_discovery_private_dns_namespace.pr.id
-    dns_records {
-      ttl  = 10
-      type = "A"
-    }
-    routing_policy = "MULTIVALUE"
-  }
-
-  tags = var.tags
-}
-
-resource "aws_service_discovery_service" "mongodb" {
-  name = "mongodb"
-
-  dns_config {
-    namespace_id = aws_service_discovery_private_dns_namespace.pr.id
-    dns_records {
-      ttl  = 10
-      type = "A"
-    }
-    routing_policy = "MULTIVALUE"
-  }
 
   tags = var.tags
 }
@@ -255,7 +225,7 @@ resource "aws_route53_record" "pr" {
   }
 }
 
-# Task Definitions
+# MongoDB Task Definition with Service Connect
 resource "aws_ecs_task_definition" "mongodb" {
   family                   = "mongodb-pr-${var.pr_number}"
   network_mode             = "awsvpc"
@@ -272,8 +242,10 @@ resource "aws_ecs_task_definition" "mongodb" {
 
       portMappings = [
         {
+          name          = "mongodb-port"
           containerPort = 27017
           protocol      = "tcp"
+          appProtocol   = "http"
         }
       ]
 
@@ -300,6 +272,7 @@ resource "aws_ecs_task_definition" "mongodb" {
   tags = var.tags
 }
 
+# Django Task Definition with Service Connect
 resource "aws_ecs_task_definition" "django" {
   family                   = "django-pr-${var.pr_number}"
   network_mode             = "awsvpc"
@@ -316,15 +289,17 @@ resource "aws_ecs_task_definition" "django" {
 
       portMappings = [
         {
+          name          = "django-port"
           containerPort = 8000
           protocol      = "tcp"
+          appProtocol   = "http"
         }
       ]
 
       environment = [
         {
           name  = "MONGODB_HOST"
-          value = "mongodb.pr-${var.pr_number}.local"
+          value = "mongodb"  # Service Connect alias - this resolves automatically!
         },
         {
           name  = "MONGODB_PORT"
@@ -353,20 +328,14 @@ resource "aws_ecs_task_definition" "django" {
         }
       }
 
-      healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:8000/health/ || exit 1"]
-        interval    = 30
-        timeout     = 5
-        retries     = 3
-        startPeriod = 60
-      }
+      essential = true
     }
   ])
 
   tags = var.tags
 }
 
-# ECS Services
+# MongoDB ECS Service with Service Connect
 resource "aws_ecs_service" "mongodb" {
   name            = "mongodb-pr-${var.pr_number}"
   cluster         = var.cluster_id
@@ -380,19 +349,38 @@ resource "aws_ecs_service" "mongodb" {
     assign_public_ip = false
   }
 
-  service_registries {
-    registry_arn = aws_service_discovery_service.mongodb.arn
+  # Service Connect configuration for MongoDB
+  service_connect_configuration {
+    enabled   = true
+    namespace = aws_service_discovery_private_dns_namespace.pr.arn
+
+    service {
+      client_alias {
+        port     = 27017
+        dns_name = "mongodb"
+      }
+
+      port_name      = "mongodb-port"
+      discovery_name = "mongodb"
+    }
   }
+
+  # Health check grace period for MongoDB startup
+  health_check_grace_period_seconds = 120
 
   tags = var.tags
 }
 
+# Django ECS Service with Service Connect
 resource "aws_ecs_service" "django" {
   name            = "django-pr-${var.pr_number}"
   cluster         = var.cluster_id
   task_definition = aws_ecs_task_definition.django.arn
   desired_count   = 1
   launch_type     = "FARGATE"
+
+  # Django depends on MongoDB being ready
+  depends_on = [aws_ecs_service.mongodb]
 
   network_configuration {
     subnets          = var.private_subnets
@@ -406,9 +394,14 @@ resource "aws_ecs_service" "django" {
     container_port   = 8000
   }
 
-  service_registries {
-    registry_arn = aws_service_discovery_service.django.arn
+  # Service Connect configuration for Django (client only)
+  service_connect_configuration {
+    enabled   = true
+    namespace = aws_service_discovery_private_dns_namespace.pr.arn
   }
+
+  # Health check grace period for Django startup
+  health_check_grace_period_seconds = 120
 
   depends_on = [aws_ecs_service.mongodb, aws_lb_listener_rule.django]
 
