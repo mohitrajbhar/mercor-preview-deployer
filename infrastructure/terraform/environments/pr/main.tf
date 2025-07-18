@@ -34,7 +34,7 @@ data "aws_route53_zone" "main" {
   name = var.domain_name
 }
 
-# Deploy PR-specific. services
+# Deploy PR-specific. services 
 module "pr_services" {
   source = "../../modules/pr-services"
 
