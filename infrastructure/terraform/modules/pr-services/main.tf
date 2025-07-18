@@ -387,7 +387,7 @@ resource "null_resource" "update_django_with_mongodb_ip" {
     EOT
   }
 
-  # Trigger this resource when services change
+  # Trigger this resource when services change 
   triggers = {
     mongodb_service = aws_ecs_service.mongodb.id
     django_service  = aws_ecs_service.django.id
