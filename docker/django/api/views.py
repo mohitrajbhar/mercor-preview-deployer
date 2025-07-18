@@ -4,31 +4,21 @@ from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from pymongo import MongoClient
-from django.conf import settings
 from datetime import datetime
-
-# MongoDB connection
-def get_mongo_client():
-    host = os.getenv('MONGODB_HOST', 'localhost')
-    port = int(os.getenv('MONGODB_PORT', 27017))
-    database = os.getenv('MONGODB_DATABASE', 'mercor_dev')
-    
-    client = MongoClient(host, port)
-    return client[database]
+from bson import ObjectId
+from .mongodb import mongodb_client
 
 def health_check(request):
     """Health check endpoint for ALB"""
     try:
-        # Test MongoDB connection
-        db = get_mongo_client()
-        db.command('ping')
+        is_connected = mongodb_client.is_connected()
         
         return JsonResponse({
-            'status': 'healthy',
-            'database': 'connected',
+            'status': 'healthy' if is_connected else 'unhealthy',
+            'database': 'connected' if is_connected else 'disconnected',
             'environment': os.getenv('MONGODB_DATABASE', 'mercor_dev'),
-            'host': os.getenv('MONGODB_HOST', 'localhost')
+            'host': os.getenv('MONGODB_HOST', 'localhost'),
+            'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
         return JsonResponse({
@@ -39,9 +29,17 @@ def health_check(request):
 def welcome_view(request):
     """Welcome page with navigation"""
     try:
-        db = get_mongo_client()
-        products_count = db.products.count_documents({})
-        users_count = db.users.count_documents({})
+        if not mongodb_client.is_connected():
+            return render(request, 'error.html', {
+                'error': 'Database connection failed',
+                'details': 'MongoDB is not accessible'
+            })
+            
+        products_collection = mongodb_client.get_collection('products')
+        users_collection = mongodb_client.get_collection('users')
+        
+        products_count = products_collection.count_documents({}) if products_collection else 0
+        users_count = users_collection.count_documents({}) if users_collection else 0
         
         context = {
             'pr_number': os.getenv('PR_NUMBER', 'unknown'),
@@ -60,20 +58,28 @@ def welcome_view(request):
         return render(request, 'welcome.html', context)
         
     except Exception as e:
-        return JsonResponse({
-            'error': 'Database connection failed',
+        return render(request, 'error.html', {
+            'error': 'Application error',
             'details': str(e)
-        }, status=500)
+        })
 
 def product_catalog_view(request):
     """Display products in a nice HTML page"""
     try:
-        db = get_mongo_client()
-        products = list(db.products.find())
+        products_collection = mongodb_client.get_collection('products')
+        if not products_collection:
+            return render(request, 'error.html', {
+                'error': 'Database connection failed',
+                'details': 'Cannot connect to MongoDB'
+            })
+            
+        products = list(products_collection.find())
         
         # Convert ObjectId to string for template rendering
         for product in products:
             product['_id'] = str(product['_id'])
+            if 'created_at' in product and hasattr(product['created_at'], 'isoformat'):
+                product['created_at'] = product['created_at'].isoformat()
             
         context = {
             'products': products,
@@ -92,15 +98,22 @@ def product_catalog_view(request):
 def init_sample_data(request):
     """Initialize sample data in MongoDB"""
     try:
-        db = get_mongo_client()
+        products_collection = mongodb_client.get_collection('products')
+        users_collection = mongodb_client.get_collection('users')
+        
+        if not products_collection or not users_collection:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Database connection failed'
+            }, status=500)
         
         # Check if data already exists
-        if db.products.count_documents({}) > 0:
+        if products_collection.count_documents({}) > 0:
             return JsonResponse({
                 'status': 'info',
                 'message': 'Sample data already exists',
-                'products_count': db.products.count_documents({}),
-                'users_count': db.users.count_documents({})
+                'products_count': products_collection.count_documents({}),
+                'users_count': users_collection.count_documents({})
             })
         
         # Sample products data
@@ -193,8 +206,8 @@ def init_sample_data(request):
         ]
         
         # Insert data
-        products_result = db.products.insert_many(sample_products)
-        users_result = db.users.insert_many(sample_users)
+        products_result = products_collection.insert_many(sample_products)
+        users_result = users_collection.insert_many(sample_users)
         
         return JsonResponse({
             'status': 'success',
@@ -216,13 +229,19 @@ def init_sample_data(request):
 def product_list_api(request):
     """API endpoint to get all products"""
     try:
-        db = get_mongo_client()
-        products = list(db.products.find())
+        products_collection = mongodb_client.get_collection('products')
+        if not products_collection:
+            return JsonResponse({
+                'status': 'error',
+                'error': 'Database connection failed'
+            }, status=500)
+            
+        products = list(products_collection.find())
         
         # Convert ObjectId and datetime to string
         for product in products:
             product['_id'] = str(product['_id'])
-            if 'created_at' in product:
+            if 'created_at' in product and hasattr(product['created_at'], 'isoformat'):
                 product['created_at'] = product['created_at'].isoformat()
         
         return JsonResponse({
@@ -242,13 +261,19 @@ def product_list_api(request):
 def product_by_category_api(request, category):
     """API endpoint to get products by category"""
     try:
-        db = get_mongo_client()
-        products = list(db.products.find({'category': category}))
+        products_collection = mongodb_client.get_collection('products')
+        if not products_collection:
+            return JsonResponse({
+                'status': 'error',
+                'error': 'Database connection failed'
+            }, status=500)
+            
+        products = list(products_collection.find({'category': category}))
         
         # Convert ObjectId and datetime to string
         for product in products:
             product['_id'] = str(product['_id'])
-            if 'created_at' in product:
+            if 'created_at' in product and hasattr(product['created_at'], 'isoformat'):
                 product['created_at'] = product['created_at'].isoformat()
         
         return JsonResponse({
@@ -267,20 +292,26 @@ def product_by_category_api(request, category):
 def test_db(request):
     """Test database connection and operations"""
     try:
-        db = get_mongo_client()
-        collection = db.test_collection
+        test_collection = mongodb_client.get_collection('test_collection')
+        if not test_collection:
+            return JsonResponse({
+                'status': 'error',
+                'error': 'Database connection failed'
+            }, status=500)
         
         # Insert a test document
         test_doc = {
             'message': 'Hello from PR environment!',
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(),
             'pr_number': os.getenv('PR_NUMBER', 'unknown')
         }
-        result = collection.insert_one(test_doc)
+        result = test_collection.insert_one(test_doc)
         
         # Retrieve the document
-        retrieved = collection.find_one({'_id': result.inserted_id})
-        retrieved['_id'] = str(retrieved['_id'])  # Convert ObjectId to string
+        retrieved = test_collection.find_one({'_id': result.inserted_id})
+        retrieved['_id'] = str(retrieved['_id'])
+        if 'timestamp' in retrieved and hasattr(retrieved['timestamp'], 'isoformat'):
+            retrieved['timestamp'] = retrieved['timestamp'].isoformat()
         
         return JsonResponse({
             'status': 'success',
@@ -297,16 +328,19 @@ def test_db(request):
 @require_http_methods(["GET", "POST"])
 def user_list(request):
     """List all users or create a new user"""
-    db = get_mongo_client()
-    collection = db.users
+    try:
+        users_collection = mongodb_client.get_collection('users')
+        if not users_collection:
+            return JsonResponse({
+                'status': 'error',
+                'error': 'Database connection failed'
+            }, status=500)
     
-    if request.method == 'GET':
-        try:
-            users = list(collection.find())
-            # Convert ObjectId and datetime to string for JSON serialization
+        if request.method == 'GET':
+            users = list(users_collection.find())
             for user in users:
                 user['_id'] = str(user['_id'])
-                if 'created_at' in user:
+                if 'created_at' in user and hasattr(user['created_at'], 'isoformat'):
                     user['created_at'] = user['created_at'].isoformat()
             
             return JsonResponse({
@@ -314,44 +348,42 @@ def user_list(request):
                 'users': users,
                 'count': len(users)
             })
-        except Exception as e:
-            return JsonResponse({
-                'status': 'error',
-                'error': str(e)
-            }, status=500)
-    
-    elif request.method == 'POST':
-        try:
+        
+        elif request.method == 'POST':
             data = json.loads(request.body)
             data['created_at'] = datetime.now()
-            result = collection.insert_one(data)
+            result = users_collection.insert_one(data)
             
             return JsonResponse({
                 'status': 'success',
                 'user_id': str(result.inserted_id),
                 'message': 'User created successfully'
             }, status=201)
-        except Exception as e:
-            return JsonResponse({
-                'status': 'error',
-                'error': str(e)
-            }, status=500)
+            
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'error': str(e)
+        }, status=500)
 
 @csrf_exempt
 @require_http_methods(["GET", "PUT", "DELETE"])
 def user_detail(request, user_id):
-    """Get, update, or delete a specific user"""
-    from bson import ObjectId
-    
-    db = get_mongo_client()
-    collection = db.users
-    
+    """Get, update, or delete a specific user - FIXED VERSION"""
     try:
+        users_collection = mongodb_client.get_collection('users')
+        if not users_collection:
+            return JsonResponse({
+                'status': 'error',
+                'error': 'Database connection failed'
+            }, status=500)
+    
         if request.method == 'GET':
-            user = collection.find_one({'_id': ObjectId(user_id)})
-            if user:
+            user = users_collection.find_one({'_id': ObjectId(user_id)})
+            # ✅ FIXED: Changed from "if user:" to "if user is not None:"
+            if user is not None:
                 user['_id'] = str(user['_id'])
-                if 'created_at' in user:
+                if 'created_at' in user and hasattr(user['created_at'], 'isoformat'):
                     user['created_at'] = user['created_at'].isoformat()
                 return JsonResponse({
                     'status': 'success',
@@ -366,7 +398,7 @@ def user_detail(request, user_id):
         elif request.method == 'PUT':
             data = json.loads(request.body)
             data['updated_at'] = datetime.now()
-            result = collection.update_one(
+            result = users_collection.update_one(
                 {'_id': ObjectId(user_id)},
                 {'$set': data}
             )
@@ -383,7 +415,7 @@ def user_detail(request, user_id):
                 }, status=404)
         
         elif request.method == 'DELETE':
-            result = collection.delete_one({'_id': ObjectId(user_id)})
+            result = users_collection.delete_one({'_id': ObjectId(user_id)})
             
             if result.deleted_count:
                 return JsonResponse({
@@ -395,7 +427,7 @@ def user_detail(request, user_id):
                     'status': 'error',
                     'message': 'User not found'
                 }, status=404)
-    
+                
     except Exception as e:
         return JsonResponse({
             'status': 'error',
