@@ -119,7 +119,7 @@ def init_sample_data(request):
         # Sample products data
         sample_products = [
             {
-                'name': 'Laptop Pro 15"',
+                'name': 'Laptop Pro 15" New',
                 'description': 'High-performance laptop with 16GB RAM and 512GB SSD',
                 'price': 1299.99,
                 'category': 'Electronics',
