@@ -7,5 +7,5 @@ variable "aws_region" {
 variable "domain_name" {
   description = "Domain name for SSL certificate"
   type        = string
-  default     = "infra-dev.devrev-eng.ai"
+  default     = "preview-url.trial.mercor.com"
 }

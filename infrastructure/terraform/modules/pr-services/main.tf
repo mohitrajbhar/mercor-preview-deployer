@@ -7,11 +7,11 @@ data "aws_region" "current" {}
 data "terraform_remote_state" "shared" {
   backend = "s3"
   config = {
-    bucket         = "test-terraform-state-bucket-mohit"
+    bucket         = "test-terraform-state-bucket-mohit-trial-1"
     key            = "shared-infrastructure/terraform.tfstate"
     region         = "us-east-1"
     encrypt        = true
-    dynamodb_table = "test-terraform-state-locks-mohit"
+    dynamodb_table = "test-terraform-state-locks-mohit-trial"
   }
 }
 

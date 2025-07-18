@@ -7,7 +7,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  DOMAIN_NAME: infra-dev.devrev-eng.ai
+  DOMAIN_NAME: preview-url.trial.mercor.com
   ECR_REPOSITORY: mercor-django
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
     - name: Check if shared infrastructure exists
       id: check-shared
       run: |
-        if aws s3 ls s3://test-terraform-state-bucket-mohit/shared-infrastructure/terraform.tfstate; then
+        if aws s3 ls s3://test-terraform-state-bucket-mohit-trial-1/shared-infrastructure/terraform.tfstate; then
           echo "shared_exists=true" >> $GITHUB_OUTPUT
         else
           echo "shared_exists=false" >> $GITHUB_OUTPUT

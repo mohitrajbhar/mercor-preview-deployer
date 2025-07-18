@@ -15,7 +15,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  DOMAIN_NAME: infra-dev.devrev-eng.ai
+  DOMAIN_NAME: preview-url.trial.mercor.com
 
 jobs:
   shared-infrastructure:
