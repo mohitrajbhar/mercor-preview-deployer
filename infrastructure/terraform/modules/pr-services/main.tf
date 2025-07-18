@@ -1,5 +1,5 @@
 # infrastructure/terraform/modules/pr-services/main.tf
-# Most reliable approach: MongoDB first, then Django with IP reference
+# Simplified version without service discovery
 
 data "aws_region" "current" {}
 
@@ -51,7 +51,7 @@ resource "aws_cloudwatch_log_group" "mongodb" {
   tags              = var.tags
 }
 
-# Security Groups with all required rules
+# Security Groups with simplified rules
 resource "aws_security_group" "django" {
   name        = "django-pr-${var.pr_number}"
   description = "Security group for Django service PR ${var.pr_number}"
@@ -65,36 +65,13 @@ resource "aws_security_group" "django" {
     description     = "ALB to Django"
   }
 
+  # Allow all outbound traffic (simplified)
   egress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTPS outbound"
-  }
-
-  egress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTP outbound"
-  }
-
-  egress {
-    from_port   = 53
-    to_port     = 53
-    protocol    = "udp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "DNS resolution"
-  }
-
-  egress {
-    from_port   = 27017
-    to_port     = 27017
-    protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/16"]
-    description = "MongoDB connection within VPC"
+    description = "All outbound traffic"
   }
 
   tags = merge(var.tags, {
@@ -115,36 +92,13 @@ resource "aws_security_group" "mongodb" {
     description = "MongoDB access from VPC"
   }
 
+  # Allow all outbound traffic (simplified)
   egress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTPS outbound"
-  }
-
-  egress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTP outbound"
-  }
-
-  egress {
-    from_port   = 53
-    to_port     = 53
-    protocol    = "udp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "DNS resolution"
-  }
-
-  egress {
-    from_port       = 2049
-    to_port         = 2049
-    protocol        = "tcp"
-    security_groups = [var.efs_security_group_id]
-    description     = "EFS access"
+    description = "All outbound traffic"
   }
 
   tags = merge(var.tags, {
@@ -414,6 +368,19 @@ resource "null_resource" "update_django_with_mongodb_ip" {
             # Get latest task definition revision
             LATEST_REVISION=$(aws ecs describe-task-definition --task-definition django-pr-${var.pr_number} --query 'taskDefinition.revision' --output text --region ${data.aws_region.current.name})
             
+            # Stop all current Django tasks first to avoid conflicts
+            echo "Stopping existing Django tasks..."
+            EXISTING_TASKS=$(aws ecs list-tasks --cluster ${var.cluster_id} --service-name django-pr-${var.pr_number} --query 'taskArns' --output text --region ${data.aws_region.current.name})
+            for task in $EXISTING_TASKS; do
+              if [ "$task" != "" ] && [ "$task" != "None" ]; then
+                aws ecs stop-task --cluster ${var.cluster_id} --task $task --reason "Updating to use MongoDB IP" --region ${data.aws_region.current.name}
+              fi
+            done
+            
+            # Wait for tasks to stop
+            echo "Waiting for old tasks to stop..."
+            sleep 30
+            
             # Update Django service to use new task definition
             aws ecs update-service \
               --cluster ${var.cluster_id} \
@@ -423,6 +390,15 @@ resource "null_resource" "update_django_with_mongodb_ip" {
               --region ${data.aws_region.current.name}
             
             echo "Updated Django service with MongoDB IP: $MONGODB_IP"
+            
+            # Wait for new deployment to be stable
+            echo "Waiting for deployment to stabilize..."
+            aws ecs wait services-stable \
+              --cluster ${var.cluster_id} \
+              --services django-pr-${var.pr_number} \
+              --region ${data.aws_region.current.name}
+            
+            echo "Deployment completed successfully!"
             break
           fi
         fi
