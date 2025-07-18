@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render
+from .mongodb import mongodb_client  # Update import path as needed
 
 def health_check(request):
     """Enhanced health check endpoint with beautiful HTML page"""
@@ -27,7 +28,7 @@ def health_check(request):
             'python_version': '3.11',  # Update with your Python version
             'container_info': {
                 'hostname': os.uname().nodename if hasattr(os, 'uname') else 'unknown',
-                'platform': 'AWS ECS Fargate',
+                'platform': 'AWS ECS',
                 'network_mode': 'bridge'  # Update based on your configuration
             },
             'services': {
@@ -50,11 +51,12 @@ def health_check(request):
         if is_connected:
             try:
                 db = mongodb_client.get_database()
-                mongodb_stats = {
-                    'collections': db.list_collection_names(),
-                    'server_info': db.client.server_info().get('version', 'unknown'),
-                    'database_name': db.name
-                }
+                if db:
+                    mongodb_stats = {
+                        'collections': db.list_collection_names(),
+                        'server_info': db.client.server_info().get('version', 'unknown'),
+                        'database_name': db.name
+                    }
             except Exception as e:
                 mongodb_stats = {'error': str(e)}
         
@@ -80,7 +82,9 @@ def health_check(request):
         error_data = {
             'status': 'unhealthy',
             'error': str(e),
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'pr_number': os.getenv('PR_NUMBER', 'unknown'),
+            'environment': os.getenv('MONGODB_DATABASE', 'mercor_dev'),
         }
         
         # Return JSON for API requests, HTML for browser requests
