@@ -1,0 +1,363 @@
+<!-- templates/health_check.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Health Check - PR {{ health_data.pr_number }}</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            margin-left: 10px;
+        }
+
+        .status-healthy {
+            background: #10b981;
+            color: white;
+        }
+
+        .status-unhealthy {
+            background: #ef4444;
+            color: white;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .card-icon {
+            font-size: 1.5rem;
+            margin-right: 10px;
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .card-content {
+            color: #6b7280;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f3f4f6;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            font-weight: 500;
+        }
+
+        .info-value {
+            font-family: 'Courier New', monospace;
+            color: #374151;
+        }
+
+        .mongodb-icon { background: #10b981; color: white; }
+        .django-icon { background: #0f766e; color: white; }
+        .system-icon { background: #7c3aed; color: white; }
+        .stats-icon { background: #dc2626; color: white; }
+
+        .collections-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .collection-tag {
+            background: #f3f4f6;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            color: #374151;
+        }
+
+        .timestamp {
+            text-align: center;
+            color: white;
+            opacity: 0.8;
+            margin-top: 2rem;
+            font-size: 0.9rem;
+        }
+
+        .json-link {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: background 0.3s ease;
+        }
+
+        .json-link:hover {
+            background: rgba(255,255,255,0.3);
+            color: white;
+            text-decoration: none;
+        }
+
+        .error-card {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #dc2626;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+    </style>
+</head>
+<body>
+    <a href="?format=json" class="json-link">
+        <i class="fas fa-code"></i> JSON API
+    </a>
+
+    <div class="container">
+        <div class="header">
+            <h1>
+                <i class="fas fa-heartbeat {% if is_healthy %}pulse{% endif %}"></i>
+                PR-{{ health_data.pr_number }} Health Check
+                <span class="status-badge {% if is_healthy %}status-healthy{% else %}status-unhealthy{% endif %}">
+                    {{ health_data.status }}
+                </span>
+            </h1>
+            <p>Environment: {{ health_data.environment }}</p>
+        </div>
+
+        <div class="dashboard">
+            <!-- MongoDB Status Card -->
+            <div class="card {% if not is_healthy %}error-card{% endif %}">
+                <div class="card-header">
+                    <div class="card-icon mongodb-icon">
+                        <i class="fas fa-database"></i>
+                    </div>
+                    <div class="card-title">MongoDB Status</div>
+                </div>
+                <div class="card-content">
+                    <div class="info-row">
+                        <span class="info-label">Connection:</span>
+                        <span class="info-value">{{ health_data.database }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Host:</span>
+                        <span class="info-value">{{ health_data.host }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Port:</span>
+                        <span class="info-value">{{ health_data.port }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Database:</span>
+                        <span class="info-value">{{ health_data.environment }}</span>
+                    </div>
+                    {% if mongodb_stats.server_info %}
+                    <div class="info-row">
+                        <span class="info-label">Version:</span>
+                        <span class="info-value">{{ mongodb_stats.server_info }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Django Status Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon django-icon">
+                        <i class="fab fa-python"></i>
+                    </div>
+                    <div class="card-title">Django Application</div>
+                </div>
+                <div class="card-content">
+                    <div class="info-row">
+                        <span class="info-label">Status:</span>
+                        <span class="info-value">{{ additional_info.services.django.status }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Environment:</span>
+                        <span class="info-value">{{ additional_info.services.django.environment }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Debug Mode:</span>
+                        <span class="info-value">{{ additional_info.services.django.debug_mode }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Django Version:</span>
+                        <span class="info-value">{{ additional_info.django_version }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Python Version:</span>
+                        <span class="info-value">{{ additional_info.python_version }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Information Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon system-icon">
+                        <i class="fas fa-server"></i>
+                    </div>
+                    <div class="card-title">System Information</div>
+                </div>
+                <div class="card-content">
+                    <div class="info-row">
+                        <span class="info-label">Hostname:</span>
+                        <span class="info-value">{{ additional_info.container_info.hostname }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Platform:</span>
+                        <span class="info-value">{{ additional_info.container_info.platform }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">Network Mode:</span>
+                        <span class="info-value">{{ additional_info.container_info.network_mode }}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">PR Number:</span>
+                        <span class="info-value">#{{ health_data.pr_number }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MongoDB Collections Card -->
+            {% if mongodb_stats.collections %}
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon stats-icon">
+                        <i class="fas fa-chart-bar"></i>
+                    </div>
+                    <div class="card-title">Database Collections</div>
+                </div>
+                <div class="card-content">
+                    <p>Available collections in <strong>{{ mongodb_stats.database_name }}</strong>:</p>
+                    <div class="collections-list">
+                        {% for collection in mongodb_stats.collections %}
+                        <span class="collection-tag">{{ collection }}</span>
+                        {% empty %}
+                        <span class="collection-tag">No collections found</span>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="timestamp">
+            <i class="fas fa-clock"></i>
+            Last updated: {{ health_data.timestamp }}
+        </div>
+    </div>
+
+    <script>
+        // Auto-refresh every 30 seconds
+        setTimeout(() => {
+            window.location.reload();
+        }, 30000);
+
+        // Add some interactivity
+        document.querySelectorAll('.card').forEach(card => {
+            card.addEventListener('click', () => {
+                card.style.transform = 'scale(0.98)';
+                setTimeout(() => {
+                    card.style.transform = '';
+                }, 150);
+            });
+        });
+    </script>
+</body>
+</html>

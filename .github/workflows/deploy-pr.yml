@@ -125,7 +125,7 @@ jobs:
         echo "🔍 Running health checks..."
         
         sleep 60
-        
+
         # Test health endpoint
         echo "Testing health endpoint..."
         curl -f "$HEALTHCHECK_URL/health/" | jq .
@@ -161,11 +161,6 @@ jobs:
           - ECS Services: \`django-pr-${prNumber}\`, \`mongodb-pr-${prNumber}\`
           - Isolated EFS storage path: \`/pr-${prNumber}\`
           - Service Discovery: \`pr-${prNumber}.local\`
-          
-          **💰 Cost Benefits:**
-          - Shared NAT Gateway and ALB (85% networking cost reduction)
-          - Isolated application and database per PR
-          - Auto-cleanup on PR close/merge
           
           This environment will be automatically destroyed when the PR is closed or merged.`;
           
