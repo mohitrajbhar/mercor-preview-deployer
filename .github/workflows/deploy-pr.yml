@@ -106,7 +106,7 @@ jobs:
     - name: Wait for deployment to be ready
       run: |
         echo "⏳ Waiting for deployment to be ready..."
-        HEALTHCHECK_URL="https://${{ steps.terraform-outputs.outputs.deployment_url }}/health/"
+        HEALTHCHECK_URL="https://${{ steps.terraform-outputs.outputs.deployment_url }}"
         
         # Wait up to 10 minutes for the service to be healthy
         for i in {1..60}; do
@@ -120,7 +120,7 @@ jobs:
     
     - name: Run basic health checks
       run: |
-        HEALTHCHECK_URL="https://${{ steps.terraform-outputs.outputs.deployment_url }}/health/"
+        HEALTHCHECK_URL="https://${{ steps.terraform-outputs.outputs.deployment_url }}"
         
         echo "🔍 Running health checks..."
         
