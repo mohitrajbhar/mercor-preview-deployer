@@ -103,11 +103,11 @@ jobs:
     - name: Wait for deployment to be ready
       run: |
         echo "⏳ Waiting for deployment to be ready..."
-        DEPLOYMENT_URL="https://${{ steps.terraform-outputs.outputs.deployment_url }}"
+        HEALTHCHECK_URL="https://${{ steps.terraform-outputs.outputs.deployment_url }}/health/"
         
         # Wait up to 10 minutes for the service to be healthy
         for i in {1..60}; do
-          if curl -f -s "$DEPLOYMENT_URL/health/" > /dev/null; then
+          if curl -f -s "$HEALTHCHECK_URL/health/" > /dev/null; then
             echo "✅ Deployment is healthy!"
             break
           fi
@@ -117,17 +117,17 @@ jobs:
     
     - name: Run basic health checks
       run: |
-        DEPLOYMENT_URL="https://${{ steps.terraform-outputs.outputs.deployment_url }}"
+        HEALTHCHECK_URL="https://${{ steps.terraform-outputs.outputs.deployment_url }}/health/"
         
         echo "🔍 Running health checks..."
         
         # Test health endpoint
         echo "Testing health endpoint..."
-        curl -f "$DEPLOYMENT_URL/health/" | jq .
+        curl -f "$HEALTHCHECK_URL/health/" | jq .
         
         # Test database connection
         echo "Testing database connection..."
-        curl -f "$DEPLOYMENT_URL/api/test-db/" | jq .
+        curl -f "$HEALTHCHECK_URL/api/test-db/" | jq .
         
         echo "✅ All health checks passed!"
     

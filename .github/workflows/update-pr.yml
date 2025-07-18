@@ -88,14 +88,14 @@ jobs:
     
     - name: Verify deployment
       run: |
-        DEPLOYMENT_URL="https://pr-${{ inputs.pr_number }}.${{ env.DOMAIN_NAME }}"
+        HEALTHCHECK_URL="https://pr-${{ inputs.pr_number }}.${{ env.DOMAIN_NAME }}/health/"
         
         echo "🔍 Verifying updated deployment..."
         
         # Test health endpoint
-        if curl -f -s "$DEPLOYMENT_URL/health/" > /dev/null; then
+        if curl -f -s "$HEALTHCHECK_URL/health/" > /dev/null; then
           echo "✅ Health check passed"
-          curl -s "$DEPLOYMENT_URL/health/" | jq .
+          curl -s "$HEALTHCHECK_URL/health/" | jq .
         else
           echo "❌ Health check failed"
           exit 1
