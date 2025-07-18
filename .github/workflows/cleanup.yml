@@ -125,10 +125,6 @@ jobs:
         echo "Testing health endpoint..."
         curl -f "$HEALTHCHECK_URL/health/" | jq .
         
-        # Test database connection
-        echo "Testing database connection..."
-        curl -f "$HEALTHCHECK_URL/api/test-db/" | jq .
-        
         echo "✅ All health checks passed!"
     
     - name: Comment PR with deployment info

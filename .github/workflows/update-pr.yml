@@ -88,7 +88,7 @@ jobs:
     
     - name: Verify deployment
       run: |
-        HEALTHCHECK_URL="https://pr-${{ inputs.pr_number }}.${{ env.DOMAIN_NAME }}/health/"
+        HEALTHCHECK_URL="https://pr-${{ inputs.pr_number }}.${{ env.DOMAIN_NAME }}"
         
         echo "🔍 Verifying updated deployment..."
         
