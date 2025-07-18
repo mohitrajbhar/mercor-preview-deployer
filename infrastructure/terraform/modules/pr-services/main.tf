@@ -1,6 +1,6 @@
 data "aws_region" "current" {}
 
-# Data source for shared infrastructure
+# Data source for shared  infrastructure
 data "terraform_remote_state" "shared" {
   backend = "s3"
   config = {
