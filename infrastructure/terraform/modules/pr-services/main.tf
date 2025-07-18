@@ -12,7 +12,7 @@ data "terraform_remote_state" "shared" {
   }
 }
 
-# Service Discovery Namespace for this PR
+# Service Discovery Namespace for this PR 
 resource "aws_service_discovery_private_dns_namespace" "pr" {
   name = "pr-${var.pr_number}.local"
   vpc  = var.vpc_id
