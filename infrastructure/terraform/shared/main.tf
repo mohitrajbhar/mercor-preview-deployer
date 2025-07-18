@@ -27,6 +27,24 @@ data "aws_route53_zone" "main" {
   name = var.domain_name
 }
 
+locals {
+  domain_name = "preview-url.trial.mercor.com"
+
+  common_tags = {
+    Environment = "shared"
+    Project     = "mercor-preview-deployer"
+    ManagedBy   = "terraform"
+  }
+}
+
+# ACM Certificate Module
+module "acm_certificate" {
+  source = "../../modules/acm-certificate"
+
+  domain_name = local.domain_name
+  tags        = local.common_tags
+}
+
 # Shared VPC
 module "vpc" {
   source = "../modules/shared-vpc"
