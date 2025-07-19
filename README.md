@@ -370,7 +370,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Django Community** for the web framework
 
 ---
-
-**Built with ❤️ by the Mercor Engineering Team**
-
-For more information, visit our [documentation](./docs/) or contact the development team.
