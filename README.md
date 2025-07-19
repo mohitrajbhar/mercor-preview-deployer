@@ -342,8 +342,6 @@ gh run list --workflow=deploy-pr.yml
 - [ ] Backup and restore
 - [ ] Cost alerting
 
-## 📞 Support
-
 ### Getting Help
 
 - **Documentation**: Check this README and `/docs` folder
@@ -351,22 +349,3 @@ gh run list --workflow=deploy-pr.yml
 - **Discussions**: [GitHub Discussions](https://github.com/mercor/mercor-preview-deployer/discussions)
 - **Slack**: `#preview-environments` channel
 
-### Emergency Contacts
-
-- **Infrastructure Issues**: DevOps team
-- **Application Issues**: Development team
-- **Cost Concerns**: FinOps team
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- **AWS ECS Team** for container orchestration platform
-- **Terraform Team** for Infrastructure as Code tooling
-- **GitHub Actions** for CI/CD automation
-- **MongoDB Team** for the database platform
-- **Django Community** for the web framework
-
----
